@@ -248,11 +248,15 @@ class UnityMegaMUEngineOperator(EngineOperator):
             await self._go_shopping()
             await self._move_items_to_warehouse()
 
+        # first reset check
+        training_type = await self._check_training_type()
+        if training_type == RESET_TRAINING_TYPE:
+            if self._player_resetable():
+                await self._reset_player()
+
         training_spot = await self._find_training_spot()
 
-        last_player_levels = self._get_player_levels(
-            self.engine.game_context.local_player
-        )
+        last_player_levels = self._get_player_levels()
 
         while True:
             player_skills = await self.engine.game_context_synchronizer.load_player_active_skills()
@@ -261,9 +265,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 self._refresh_auto_accept_pt_settings()
                 auto_accept_pt_requests = self.engine.settings.party.auto_accept_while_training
 
-            current_player_levels = self._get_player_levels(
-                self.engine.game_context.local_player
-            )
+            current_player_levels = self._get_player_levels()
             if last_player_levels < current_player_levels:
                 if training_spot.training_type == RESET_TRAINING_TYPE:
                     if self._player_resetable():
@@ -346,7 +348,9 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         self._ignored_monsters.pop(viewport_monster.addr, None)
 
-    def _get_player_levels(self, player: LocalPlayer) -> int:
+    def _get_player_levels(self) -> int:
+        player = self.engine.game_context.local_player
+
         if player.level >= self.engine.game_server.max_level:
             return player.level + player.master_level
 
@@ -666,10 +670,10 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         return result
 
-    def _check_training_type(self, player: LocalPlayer) -> str:
-        player_levels = self._get_player_levels(player)
-
-        if player_levels < self.engine.game_server.max_level:
+    async def _check_training_type(self) -> str:
+        if self.engine.game_context.local_player.reset_count == 0:
+            await asyncio.sleep(2)
+        if self.engine.game_context.local_player.reset_count < self.engine.game_server.max_rr:
             return RESET_TRAINING_TYPE
         return MASTER_TRAINING_TYPE
 
@@ -677,15 +681,11 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if self.engine.game_context.local_player.reset_count == 0:
             await asyncio.sleep(2)
 
-        training_type = self._check_training_type(
-            self.engine.game_context.local_player
-        )
+        training_type = await self._check_training_type()
 
         level_breakpoint: EngineLevelTrainingBreakpointSetting = None
 
-        player_levels = self._get_player_levels(
-            self.engine.game_context.local_player,
-        )
+        player_levels = self._get_player_levels()
 
         if training_type == RESET_TRAINING_TYPE:
             reset_breakpoint = None
@@ -791,6 +791,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         matched_monster_spot = None
         matched_fast_travel = None
         for _, _, ms in available_monster_spots:
+
             fast_travel = self._get_nearest_fast_travel_to_monster_spot(
                 monster_spot=ms,
                 lte_player_levels=True
@@ -873,9 +874,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                                                  monster_spot: WorldMonsterSpot,
                                                  lte_player_levels: bool = False,
                                                  ) -> WorldFastTravel | None:
-        player_levels = self._get_player_levels(
-            self.engine.game_context.local_player
-        )
+        player_levels = self._get_player_levels()
         world = self.engine.game_database.worlds[monster_spot.world_id]
         result = None
         length = None
@@ -1034,7 +1033,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                              training_spot: EngineOperatorTrainingSpot,
                              ):
 
-        player_level = self._get_player_levels(self.engine.game_context.local_player)
+        player_level = self._get_player_levels()
         return training_spot.setting.from_levels <= player_level < training_spot.to_levels
 
     @staticmethod
@@ -1046,7 +1045,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             await asyncio.sleep(1)
 
         fast_travel = training_spot.fast_travel
-        player_levels = self._get_player_levels(self.engine.game_context.local_player)
+        player_levels = self._get_player_levels()
 
         already_change_world_with_fast_travel = False
         while self.engine.game_context.screen.world_id != training_spot.world.id:
@@ -1105,7 +1104,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         while self.engine.game_context.is_channel_switching:
             await asyncio.sleep(1)
 
-        player_levels = self._get_player_levels(self.engine.game_context.local_player)
+        player_levels = self._get_player_levels()
 
         if self.engine.game_context.screen.world_id == world_id:
             player_distance_from_des = calculate_distance(
@@ -1145,11 +1144,13 @@ class UnityMegaMUEngineOperator(EngineOperator):
             await asyncio.sleep(1)
 
     async def _change_world(self, world_id: int, fast_travel_code: str = None):
-        self.engine.game_action_handler.change_world(
-            world_id,
-            fast_travel_code=fast_travel_code
-        )
-        await asyncio.sleep(3)
+        while self.engine.game_context.screen.world_id != world_id:
+            self.engine.game_action_handler.change_world(
+                world_id,
+                fast_travel_code=fast_travel_code
+            )
+            await asyncio.sleep(3)
+
         while self.engine.game_context.screen.is_loading or self.engine.game_context.screen.is_world_loading:
             await asyncio.sleep(1)
 
