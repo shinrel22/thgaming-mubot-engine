@@ -25,6 +25,15 @@ class RestfulServer(RestfulServerPrototype):
         try:
             result = await self.trainer.load_game_file(filepath)
         except Error as e:
+            if e.code in [
+                'UnsupportedGameServerVersion',
+                'UnsupportedGameServer',
+            ]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=e.output()
+                )
+
             raise HTTPException(
                 status_code=500,
                 detail=e.output()
