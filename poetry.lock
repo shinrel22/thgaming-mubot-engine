@@ -216,6 +216,7 @@ description = "Foreign Function Interface for Python calling C code."
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
+markers = "platform_python_implementation != \"PyPy\""
 files = [
     {file = "cffi-1.17.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:df8b1c11f177bc2313ec4b2d46baec87a5f3e71fc8b45dab2ee7cae86d9aba14"},
     {file = "cffi-1.17.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:8f2cdc858323644ab277e9bb925ad72ae0e67f69e804f4898c070998d50b1a67"},
@@ -303,21 +304,6 @@ files = [
 
 [package.dependencies]
 colorama = {version = "*", markers = "platform_system == \"Windows\""}
-
-[[package]]
-name = "clr-loader"
-version = "0.2.7.post0"
-description = "Generic pure Python loader for .NET runtimes"
-optional = false
-python-versions = ">=3.7"
-groups = ["main"]
-files = [
-    {file = "clr_loader-0.2.7.post0-py3-none-any.whl", hash = "sha256:e0b9fcc107d48347a4311a28ffe3ae78c4968edb216ffb6564cb03f7ace0bb47"},
-    {file = "clr_loader-0.2.7.post0.tar.gz", hash = "sha256:b7a8b3f8fbb1bcbbb6382d887e21d1742d4f10b5ea209e4ad95568fe97e1c7c6"},
-]
-
-[package.dependencies]
-cffi = {version = ">=1.17", markers = "python_version >= \"3.8\""}
 
 [[package]]
 name = "colorama"
@@ -1371,6 +1357,7 @@ description = "C parser in Python"
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
+markers = "platform_python_implementation != \"PyPy\""
 files = [
     {file = "pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"},
     {file = "pycparser-2.22.tar.gz", hash = "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6"},
@@ -1540,21 +1527,6 @@ files = [
 
 [package.dependencies]
 six = ">=1.5"
-
-[[package]]
-name = "pythonnet"
-version = "3.0.5"
-description = ".NET and Mono integration for Python"
-optional = false
-python-versions = "<3.14,>=3.7"
-groups = ["main"]
-files = [
-    {file = "pythonnet-3.0.5-py3-none-any.whl", hash = "sha256:f6702d694d5d5b163c9f3f5cc34e0bed8d6857150237fae411fefb883a656d20"},
-    {file = "pythonnet-3.0.5.tar.gz", hash = "sha256:48e43ca463941b3608b32b4e236db92d8d40db4c58a75ace902985f76dac21cf"},
-]
-
-[package.dependencies]
-clr_loader = ">=0.2.7,<0.3.0"
 
 [[package]]
 name = "six"
@@ -1845,4 +1817,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "95fb7e9255eeb8eeee84a6ce43a9bc9590a96010b4d371a8472cba427514e827"
+content-hash = "080ff7398a02a3ba6819b6c7c3dac90389f60f6292a15785a2b6877696a4ad3d"
