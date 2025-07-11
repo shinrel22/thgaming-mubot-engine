@@ -1088,7 +1088,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         ):
             if self.engine.game_context.screen.world_id != training_spot.world.id:
-                await asyncio.sleep(3)
                 return await self._ensure_within_training_area(training_spot)
             self.engine.game_action_handler.move_to_coord(training_spot.monster_spot.coord)
             await asyncio.sleep(1)
@@ -1140,8 +1139,19 @@ class UnityMegaMUEngineOperator(EngineOperator):
                         coord.y
                 ),
         ) > distance_error:
+
+            if self.engine.game_context.screen.world_id != world_id:
+                return await self._go_to(
+                    world_id=world_id,
+                    coord=coord,
+                    fast_travel=fast_travel,
+                    distance_error=distance_error,
+                )
+
             self.engine.game_action_handler.move_to_coord(coord)
             await asyncio.sleep(1)
+
+        return None
 
     async def _change_world(self, world_id: int, fast_travel_code: str = None):
         while self.engine.game_context.screen.world_id != world_id:
