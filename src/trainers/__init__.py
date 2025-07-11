@@ -16,7 +16,7 @@ from src.os.windows import WindowsAPI
 from src.bases.errors import Error
 from src.bases.engines import EngineMeta, GameServer, GameDatabase, EngineSettings
 from src.engines.unity_megamu import UnityMegaMUEngine, UnityMegaMUEngineMeta, UnityMegaMUSettings
-from src.constants.engine.unity_megamu import FUNC_ADD_STATS
+from src.constants.engine.unity_megamu import FUNC_ADD_STATS, FUNC_NOTICE_FRAME_ADD_NEW_NOTICE
 from src.constants import DATA_DIR, TMP_DIR
 from src.utils import scan_string, compress_data, decompress_data, hex_string_to_int_list, load_data_file
 from config import ENVIRONMENT, ROOT_DIR, SECRET_KEY
@@ -471,6 +471,8 @@ class Trainer(TrainerPrototype):
                     target_scan_results = 1
                     if f_code == FUNC_ADD_STATS:
                         target_scan_results = 3
+                    if f_code == FUNC_NOTICE_FRAME_ADD_NEW_NOTICE:
+                        target_scan_results = 10
 
                     offsets_to_check = []
 
@@ -482,15 +484,11 @@ class Trainer(TrainerPrototype):
                                 offsets_to_check.append(f_offset)
                                 break
 
-                            if f_signature == gf.signature_pattern:
-                                offsets_to_check.append(f_offset)
-                                break
-
                             if not scan_string(f_signature, gf.signature_pattern):
                                 continue
 
                             offsets_to_check.append(f_offset)
-
+                    print(f_code, offsets_to_check)
                     game_assembly_module_addr = game_modules[game_assembly_module_name]
 
                     scan_results = []

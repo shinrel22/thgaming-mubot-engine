@@ -1042,6 +1042,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
     async def _ensure_within_training_area(self,
                                            training_spot: EngineOperatorTrainingSpot,
+                                           world_cells: dict[str, WorldCell] = None,
                                            ):
         while self.engine.game_context.is_channel_switching:
             await asyncio.sleep(1)
@@ -1061,7 +1062,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if (fast_travel
                 and fast_travel.lvl_require <= player_levels
                 and not already_change_world_with_fast_travel):
-            world_cells = self.engine.world_map_handler.load_world_cells(world_id=training_spot.world.id)
+            if not world_cells:
+                world_cells = self.engine.world_map_handler.load_world_cells(world_id=training_spot.world.id)
             path_to_ts_from_player = self.engine.world_map_handler.find_path(
                 cells=world_cells,
                 start=(
@@ -1080,10 +1082,9 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 world=training_spot.world,
                 coord=training_spot.monster_spot.coord,
                 radius=self.engine.settings.location.training_radius,
-
         ):
             if self.engine.game_context.screen.world_id != training_spot.world.id:
-                return await self._ensure_within_training_area(training_spot)
+                return await self._ensure_within_training_area(training_spot, world_cells=world_cells)
             self.engine.game_action_handler.move_to_coord(training_spot.monster_spot.coord)
             await asyncio.sleep(1)
 
@@ -1095,7 +1096,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                      fast_travel: WorldFastTravel = None,
                      distance_error: int = 2,
                      world_cells: dict[str: WorldCell] = None,
-                     path_to_des_from_fast_travel: list[Coord] = None,
+                     path_to_coord_from_fast_travel: list[Coord] = None,
                      ):
         while self.engine.game_context.is_channel_switching:
             await asyncio.sleep(1)
@@ -1106,7 +1107,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         player_levels = self._get_player_levels()
 
         if self.engine.game_context.screen.world_id == world_id:
-            path_to_des_from_player = self.engine.world_map_handler.find_path(
+            path_to_coord_from_player = self.engine.world_map_handler.find_path(
                 cells=world_cells,
                 start=(
                     self.engine.game_context.local_player.current_coord.x,
@@ -1118,8 +1119,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 )
             )
             if fast_travel and fast_travel.lvl_require <= player_levels:
-                if not path_to_des_from_fast_travel:
-                    path_to_des_from_fast_travel = self.engine.world_map_handler.find_path(
+                if not path_to_coord_from_fast_travel:
+                    path_to_coord_from_fast_travel = self.engine.world_map_handler.find_path(
                         cells=world_cells,
                         start=(
                             fast_travel.coord.x,
@@ -1131,7 +1132,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                         )
                     )
 
-                if not path_to_des_from_player or len(path_to_des_from_player) > len(path_to_des_from_fast_travel):
+                if not path_to_coord_from_player or len(path_to_coord_from_player) > len(path_to_coord_from_fast_travel):
                     await self._change_world(world_id, fast_travel.code)
         else:
             if fast_travel and fast_travel.lvl_require <= player_levels:
@@ -1156,6 +1157,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     coord=coord,
                     fast_travel=fast_travel,
                     distance_error=distance_error,
+                    world_cells=world_cells,
+                    path_to_coord_from_fast_travel=path_to_coord_from_fast_travel
                 )
 
             self.engine.game_action_handler.move_to_coord(coord)
@@ -1164,6 +1167,12 @@ class UnityMegaMUEngineOperator(EngineOperator):
         return None
 
     async def _change_world(self, world_id: int, fast_travel_code: str = None):
+        self.engine.game_action_handler.change_world(
+            world_id,
+            fast_travel_code=fast_travel_code
+        )
+        await asyncio.sleep(3)
+
         while self.engine.game_context.screen.world_id != world_id:
             self.engine.game_action_handler.change_world(
                 world_id,
