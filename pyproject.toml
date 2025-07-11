@@ -17,6 +17,7 @@ cryptography = "^45.0.4"
 psutil = "^7.0.0"
 capstone = "^5.0.6"
 aiohttp = "^3.12.13"
+sympy = "^1.14.0"
 
 
 [tool.poetry.group.dev.dependencies]

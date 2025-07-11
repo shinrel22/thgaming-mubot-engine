@@ -7,7 +7,7 @@ from src.bases.engines.data_models import (
     ViewportObject, NPC, EngineOperatorTrainingSpot,
     WorldFastTravel,
     WorldMonsterSpot,
-    EngineLevelTrainingBreakpointSetting, GameCoord, World, LocalPlayer,
+    EngineLevelTrainingBreakpointSetting, GameCoord, World, LocalPlayer, WorldCell,
 )
 from src.bases.errors import Error
 from src.bases.engines.operators import EngineOperator
@@ -1040,11 +1040,14 @@ class UnityMegaMUEngineOperator(EngineOperator):
     def gen_training_spot_code(channel_id: int, world_id: int, coord: Coord):
         return f'{channel_id}${world_id}${coord.x}-{coord.y}'
 
-    async def _ensure_within_training_area(self, training_spot: EngineOperatorTrainingSpot):
+    async def _ensure_within_training_area(self,
+                                           training_spot: EngineOperatorTrainingSpot,
+                                           ):
         while self.engine.game_context.is_channel_switching:
             await asyncio.sleep(1)
 
         fast_travel = training_spot.fast_travel
+        path_to_ms_from_tf = training_spot.monster_spot.fast_travels[fast_travel.code]
         player_levels = self._get_player_levels()
 
         already_change_world_with_fast_travel = False
@@ -1058,27 +1061,19 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if (fast_travel
                 and fast_travel.lvl_require <= player_levels
                 and not already_change_world_with_fast_travel):
-            player_distance_from_spot = calculate_distance(
-                (
+            world_cells = self.engine.world_map_handler.load_world_cells(world_id=training_spot.world.id)
+            path_to_ts_from_player = self.engine.world_map_handler.find_path(
+                cells=world_cells,
+                start=(
                     self.engine.game_context.local_player.current_coord.x,
                     self.engine.game_context.local_player.current_coord.y
                 ),
-                (
+                goal=(
                     training_spot.monster_spot.coord.x,
-                    training_spot.monster_spot.coord.y,
-                ),
+                    training_spot.monster_spot.coord.y
+                )
             )
-            ft_distance_from_spot = calculate_distance(
-                (
-                    fast_travel.coord.x,
-                    fast_travel.coord.y
-                ),
-                (
-                    training_spot.monster_spot.coord.x,
-                    training_spot.monster_spot.coord.y,
-                ),
-            )
-            if player_distance_from_spot > ft_distance_from_spot:
+            if not path_to_ts_from_player or len(path_to_ts_from_player) > len(path_to_ms_from_tf):
                 await self._change_world(training_spot.world.id, fast_travel.code)
 
         while not self._within_area(
@@ -1098,30 +1093,45 @@ class UnityMegaMUEngineOperator(EngineOperator):
                      world_id: int,
                      coord: Coord,
                      fast_travel: WorldFastTravel = None,
-                     distance_error: int = 2
+                     distance_error: int = 2,
+                     world_cells: dict[str: WorldCell] = None,
+                     path_to_des_from_fast_travel: list[Coord] = None,
                      ):
         while self.engine.game_context.is_channel_switching:
             await asyncio.sleep(1)
 
+        if not world_cells:
+            world_cells = self.engine.world_map_handler.load_world_cells(world_id)
+
         player_levels = self._get_player_levels()
 
         if self.engine.game_context.screen.world_id == world_id:
-            player_distance_from_des = calculate_distance(
-                (
+            path_to_des_from_player = self.engine.world_map_handler.find_path(
+                cells=world_cells,
+                start=(
                     self.engine.game_context.local_player.current_coord.x,
                     self.engine.game_context.local_player.current_coord.y
                 ),
-                (
+                goal=(
                     coord.x,
                     coord.y
-                ),
-            )
-            ft_distance_from_des = calculate_distance(
-                (fast_travel.coord.x, fast_travel.coord.y),
-                (coord.x, coord.y)
+                )
             )
             if fast_travel and fast_travel.lvl_require <= player_levels:
-                if player_distance_from_des > ft_distance_from_des:
+                if not path_to_des_from_fast_travel:
+                    path_to_des_from_fast_travel = self.engine.world_map_handler.find_path(
+                        cells=world_cells,
+                        start=(
+                            fast_travel.coord.x,
+                            fast_travel.coord.y
+                        ),
+                        goal=(
+                            coord.x,
+                            coord.y
+                        )
+                    )
+
+                if not path_to_des_from_player or len(path_to_des_from_player) > len(path_to_des_from_fast_travel):
                     await self._change_world(world_id, fast_travel.code)
         else:
             if fast_travel and fast_travel.lvl_require <= player_levels:
