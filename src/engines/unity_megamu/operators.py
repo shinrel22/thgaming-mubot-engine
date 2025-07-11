@@ -277,14 +277,19 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
             await self._ensure_items_are_picked_up(training_spot)
 
-            await self._ensure_within_training_area(training_spot)
+            if not self._within_area(
+                world=training_spot.world,
+                radius=self.engine.settings.location.training_radius,
+                coord=training_spot.monster_spot.coord
+            ):
+                await self._ensure_within_training_area(training_spot)
 
             viewport_monster = self._get_viewport_monster(training_spot)
 
+            await self._ensure_boost_items_are_used()
+
             if not viewport_monster:
                 continue
-
-            await self._ensure_boost_items_are_used()
 
             await self._ensure_buffs_are_casted(
                 self.engine.settings.skills.pve.buff_skill_ids,
@@ -790,14 +795,27 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         matched_monster_spot = None
         matched_fast_travel = None
+
+        world_maps: dict[int, dict[str, WorldCell]] = {}
+
         for _, _, ms in available_monster_spots:
 
             fast_travel = self._get_nearest_fast_travel_to_monster_spot(
                 monster_spot=ms,
                 lte_player_levels=True
             )
+            if ms.world_id not in world_maps:
+                world_maps[ms.world_id] = self.engine.world_map_handler.load_world_cells(ms.world_id)
 
-            await self._go_to(ms.world_id, ms.coord, fast_travel)
+            world_map = world_maps[ms.world_id]
+
+            await self._go_to(
+                ms.world_id,
+                ms.coord,
+                fast_travel,
+                world_cells=world_map,
+                path_to_coord_from_fast_travel=ms.fast_travels[fast_travel.code]
+            )
 
             # check if there are any other players in the training area
             viewport_players_in_area = list(filter(
@@ -821,7 +839,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     continue
 
                 if ((not self.engine.game_context.party_manager.is_in_party
-                        or self.engine.game_context.party_manager.is_leader)
+                     or self.engine.game_context.party_manager.is_leader)
                         and self.engine.settings.party.auto_send_while_training):
                     accepted = await self._try_partying_player(vpp, ms)
                     if accepted:
@@ -868,6 +886,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             to_levels=to_levels,
             map=ms_map,
             training_type=training_type,
+            world_map=world_maps[world.id]
         )
 
     def _get_nearest_fast_travel_to_monster_spot(self,
@@ -1042,7 +1061,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
     async def _ensure_within_training_area(self,
                                            training_spot: EngineOperatorTrainingSpot,
-                                           world_cells: dict[str, WorldCell] = None,
                                            ):
         while self.engine.game_context.is_channel_switching:
             await asyncio.sleep(1)
@@ -1053,39 +1071,41 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         already_change_world_with_fast_travel = False
         while self.engine.game_context.screen.world_id != training_spot.world.id:
-            if fast_travel and fast_travel.lvl_require <= player_levels:
+            if fast_travel.lvl_require <= player_levels:
                 await self._change_world(training_spot.world.id, fast_travel.code)
                 already_change_world_with_fast_travel = True
             else:
                 await self._change_world(training_spot.world.id)
-
-        if (fast_travel
-                and fast_travel.lvl_require <= player_levels
-                and not already_change_world_with_fast_travel):
-            if not world_cells:
-                world_cells = self.engine.world_map_handler.load_world_cells(world_id=training_spot.world.id)
-            path_to_ts_from_player = self.engine.world_map_handler.find_path(
-                cells=world_cells,
-                start=(
-                    self.engine.game_context.local_player.current_coord.x,
-                    self.engine.game_context.local_player.current_coord.y
-                ),
-                goal=(
-                    training_spot.monster_spot.coord.x,
-                    training_spot.monster_spot.coord.y
-                )
-            )
-            if not path_to_ts_from_player or len(path_to_ts_from_player) > len(path_to_ms_from_tf):
-                await self._change_world(training_spot.world.id, fast_travel.code)
 
         while not self._within_area(
                 world=training_spot.world,
                 coord=training_spot.monster_spot.coord,
                 radius=self.engine.settings.location.training_radius,
         ):
+
+            if (fast_travel.lvl_require <= player_levels
+                    and not already_change_world_with_fast_travel):
+                path_to_ts_from_player = self.engine.world_map_handler.find_path(
+                    cells=training_spot.world_map,
+                    start=(
+                        self.engine.game_context.local_player.current_coord.x,
+                        self.engine.game_context.local_player.current_coord.y
+                    ),
+                    goal=(
+                        training_spot.monster_spot.coord.x,
+                        training_spot.monster_spot.coord.y
+                    )
+                )
+                print('path_to_ts_from_player', len(path_to_ts_from_player))
+                print('path_to_ts_from_player', len(path_to_ts_from_player))
+                if not path_to_ts_from_player or len(path_to_ts_from_player) > len(path_to_ms_from_tf):
+                    await self._change_world(training_spot.world.id, fast_travel.code)
+
             if self.engine.game_context.screen.world_id != training_spot.world.id:
-                return await self._ensure_within_training_area(training_spot, world_cells=world_cells)
+                return await self._ensure_within_training_area(training_spot)
+
             self.engine.game_action_handler.move_to_coord(training_spot.monster_spot.coord)
+
             await asyncio.sleep(1)
 
         return None
@@ -1106,7 +1126,23 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         player_levels = self._get_player_levels()
 
-        if self.engine.game_context.screen.world_id == world_id:
+        if self.engine.game_context.screen.world_id != world_id:
+            if fast_travel and fast_travel.lvl_require <= player_levels:
+                await self._change_world(world_id, fast_travel.code)
+            else:
+                await self._change_world(world_id)
+
+        while calculate_distance(
+                (
+                        self.engine.game_context.local_player.current_coord.x,
+                        self.engine.game_context.local_player.current_coord.y
+                ),
+                (
+                        coord.x,
+                        coord.y
+                ),
+        ) > distance_error:
+
             path_to_coord_from_player = self.engine.world_map_handler.find_path(
                 cells=world_cells,
                 start=(
@@ -1132,24 +1168,9 @@ class UnityMegaMUEngineOperator(EngineOperator):
                         )
                     )
 
-                if not path_to_coord_from_player or len(path_to_coord_from_player) > len(path_to_coord_from_fast_travel):
+                if not path_to_coord_from_player or len(path_to_coord_from_player) > len(
+                        path_to_coord_from_fast_travel):
                     await self._change_world(world_id, fast_travel.code)
-        else:
-            if fast_travel and fast_travel.lvl_require <= player_levels:
-                await self._change_world(world_id, fast_travel.code)
-            else:
-                await self._change_world(world_id)
-
-        while calculate_distance(
-                (
-                        self.engine.game_context.local_player.current_coord.x,
-                        self.engine.game_context.local_player.current_coord.y
-                ),
-                (
-                        coord.x,
-                        coord.y
-                ),
-        ) > distance_error:
 
             if self.engine.game_context.screen.world_id != world_id:
                 return await self._go_to(

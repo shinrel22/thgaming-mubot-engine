@@ -586,6 +586,7 @@ class EngineOperatorTrainingSpot(BaseModel):
     monster_spots: list[tuple[float, int, WorldMonsterSpot]]
     fast_travel: WorldFastTravel
     map: dict[str, WorldCell]
+    world_map: dict[str, WorldCell]
     world: World
     setting: EngineLevelTrainingBreakpointSetting
     training_type: str
