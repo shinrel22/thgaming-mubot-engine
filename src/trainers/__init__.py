@@ -16,7 +16,7 @@ from src.os.windows import WindowsAPI
 from src.bases.errors import Error
 from src.bases.engines import EngineMeta, GameServer, GameDatabase, EngineSettings
 from src.engines.unity_megamu import UnityMegaMUEngine, UnityMegaMUEngineMeta, UnityMegaMUSettings
-from src.constants.engine.unity_megamu import FUNC_ADD_STATS, FUNC_NOTICE_FRAME_ADD_NEW_NOTICE
+from src.constants.engine.unity_megamu import FUNC_ADD_STATS, FUNC_NOTICE_FRAME_ADD_NEW_NOTICE, FUNC_LOGIN_SCREEN_SELECT_CHANNEL
 from src.constants import DATA_DIR, TMP_DIR
 from src.utils import scan_string, compress_data, decompress_data, hex_string_to_int_list, load_data_file
 from config import ENVIRONMENT, ROOT_DIR, SECRET_KEY
@@ -468,12 +468,6 @@ class Trainer(TrainerPrototype):
                         scanned_funcs += 1
                         continue
 
-                    target_scan_results = 1
-                    if f_code == FUNC_ADD_STATS:
-                        target_scan_results = 3
-                    if f_code == FUNC_NOTICE_FRAME_ADD_NEW_NOTICE:
-                        target_scan_results = 10
-
                     offsets_to_check = []
 
                     if gf.signature_pattern:
@@ -488,47 +482,22 @@ class Trainer(TrainerPrototype):
                                 continue
 
                             offsets_to_check.append(f_offset)
-                    print(f_code, offsets_to_check)
-                    game_assembly_module_addr = game_modules[game_assembly_module_name]
 
                     scan_results = []
 
-                    if len(offsets_to_check) == 1:
-                        scan_results.append(offsets_to_check[0] + game_assembly_module_addr)
-                    else:
-                        if offsets_to_check:
-                            gf_length = len(hex_string_to_int_list(
-                                ''.join(gf.bytecodes)
-                            ))
-                            for otc in offsets_to_check:
-                                srs = await self._event_loop.run_in_executor(
-                                    concurrent.futures.ThreadPoolExecutor(),
-                                    self._os_api.scan_memory,
-                                    h_process,
-                                    gf.bytecodes,
-                                    game_assembly_module_addr + otc,
-                                    game_assembly_module_addr + otc + (gf_length * 2),
-                                )
-                                if srs:
-                                    scan_results.append(srs[0])
+                    if offsets_to_check:
+                        if len(offsets_to_check) == 1:
+                            scan_results.append(offsets_to_check[0])
                         else:
-                            game_assembly_filesize = os.path.getsize(self._game_server.game_assembly_filepath)
-                            scan_results = await self._event_loop.run_in_executor(
-                                concurrent.futures.ThreadPoolExecutor(),
-                                self._os_api.scan_memory,
-                                h_process,
-                                gf.bytecodes,
-                                game_assembly_module_addr,
-                                game_assembly_module_addr + game_assembly_filesize,
-                                target_scan_results
-                            )
+                            if len(offsets_to_check) >= gf.index + 1:
+                                scan_results.append(offsets_to_check[gf.index])
 
-                    if not scan_results or len(scan_results) < target_scan_results:
+                    if not scan_results:
                         raise Error(
                             code='FailedToScanFunction',
                             message=f'Failed to scan function: {f_code}, scan results: {len(scan_results)}'
                         )
-                    func_offsets[f_code] = scan_results[-1] - game_assembly_module_addr
+                    func_offsets[f_code] = scan_results[-1]
                     scanned_funcs += 1
 
                     await self._websocket_server.send_message(
@@ -541,7 +510,7 @@ class Trainer(TrainerPrototype):
                             )
                         )
                     )
-
+                    await asyncio.sleep(0.1)
                 engine = UnityMegaMUEngine(
                     autologin_settings=autologin_settings,
                     game_server=self._game_server,
@@ -555,6 +524,7 @@ class Trainer(TrainerPrototype):
                     game_modules=game_modules,
                     game_funcs=game_functions,
                 )
+
             else:
                 raise Error(
                     code='UnsupportedGameServerVersion',

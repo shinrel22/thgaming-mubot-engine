@@ -66,6 +66,7 @@ class UnityMegaMUSimulatedFuncParams(SimulatedFuncParams):
     data_move_coord: int
     data_item_dropping_coord: int
     data_stat_points: int
+    data_notification_list: int
     data_account_username: int
     data_account_password: int
 
@@ -101,7 +102,8 @@ class UnityMegaMUSimulatedFuncParams(SimulatedFuncParams):
     ptr_game_data_tables: int
     ptr_world_manager: int
     ptr_world_cell: int
-    ptr_rsp_cache: int
+    ptr_func_triggerer_rsp_cache: int
+    ptr_save_notification_rsp_cache: int
     ptr_target_func: int
 
 

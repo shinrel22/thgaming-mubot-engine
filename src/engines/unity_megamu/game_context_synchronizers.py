@@ -3,15 +3,16 @@ import ctypes
 import json
 import struct
 from json import JSONDecodeError
+from datetime import timedelta
 
 from src.bases.engines.prototypes import EnginePrototype
 from src.bases.engines.game_context_synchronizers import EngineGameContextSynchronizer
 from src.bases.engines.data_models import (
     GameScreen, PlayerSkill, Skill, ViewportObject, PlayerBody, MonsterBody, NPCBody, SummonBody, GameCoord,
     Monster, NPC, GameItem, Item, Storage, GameBody, Coord, Window, Merchant, World, Effect,
-    GameEffect, PartyManager, PartyMember, Dialog, WorldCell, ServerChannel, LobbyScreen
+    GameEffect, PartyManager, PartyMember, Dialog, WorldCell, ServerChannel, LobbyScreen, GameNotification
 )
-from src.utils import capture_error
+from src.utils import capture_error, get_now
 from src.bases.errors import Error
 from src.constants.engine import (
     ITEM_LOCATION_INVENTORY,
@@ -93,6 +94,7 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
         self.engine.game_context.loaded = is_loaded
 
         if not is_loaded:
+            await asyncio.sleep(1)
             return
 
         self._update_channel_list()
@@ -110,6 +112,7 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
         self.engine.game_context.is_channel_switching = is_channel_switching
 
         if is_channel_switching:
+            await asyncio.sleep(1)
             return
 
         channel_id = self.engine.os_api.get_value_from_pointer(
@@ -128,9 +131,11 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
             capture_error(e)
 
         if self.engine.game_context.screen.screen_id != 4:
+            await asyncio.sleep(1)
             return
 
         if self.engine.game_context.screen.is_loading or self.engine.game_context.screen.is_world_loading:
+            await asyncio.sleep(1)
             return
 
         local_player_addr = self.engine.os_api.get_value_from_pointer(
@@ -147,7 +152,8 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
 
             self._update_local_player(local_player_addr)
 
-            self._update_viewport()
+            self._update_notifications()
+            await self._update_viewport()
             self._update_chat_frame()
             self._update_player_inventory()
             self._update_party_manager()
@@ -732,6 +738,42 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
         )
         return self.engine.game_context.chat_frame
 
+    def _update_notifications(self):
+        noti_list_addr = self.engine.simulated_data_memory.game_func_params.data_notification_list
+        for noti_title_addr in self.engine.cs_type_parser.parse_list(
+            address=noti_list_addr
+        ).items:
+            if not noti_title_addr:
+                continue
+            try:
+                noti_title = self.engine.cs_type_parser.parse_string(noti_title_addr)
+            except Exception as e:
+                self._logger.error('Failed to load notification title at: ', hex(noti_title_addr))
+                capture_error(e)
+                continue
+
+            noti_title = noti_title.strip().upper()
+            if not noti_title:
+                continue
+
+            noti = GameNotification(
+                title=noti_title.strip().upper(),
+                timestamp=get_now(),
+            )
+            self.engine.game_context.notifications[noti.title] = noti
+            self._logger.info(noti.model_dump())
+
+        self.engine.cs_type_parser.write_list(
+            address=noti_list_addr,
+            data=[]
+        )
+
+        # cleaned old notifications
+        for title in list(self.engine.game_context.notifications.keys()):
+            if self.engine.game_context.notifications[title].timestamp + timedelta(minutes=1) <= get_now():
+                self.engine.game_context.notifications.pop(title)
+
+
     def _update_current_dialog(self) -> Dialog | None:
         dialog_addr = self.engine.os_api.get_value_from_pointer(
             h_process=self.engine.h_process,
@@ -796,7 +838,7 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
 
         return result
 
-    def _update_viewport(self) -> UnityMegaMUViewport | None:
+    async def _update_viewport(self) -> UnityMegaMUViewport | None:
         viewport_addr = self.engine.os_api.get_value_from_pointer(
             h_process=self.engine.h_process,
             pointer=self.engine.game_context.addr + self.engine.meta.viewport_offset,
@@ -857,6 +899,7 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
                 self.engine.game_action_handler.trigger_function(
                     address=viewport_object_is_item_trigger,
                 )
+                await asyncio.sleep(0.1)
 
                 is_item = self.engine.os_api.get_value_from_pointer(
                     h_process=self.engine.h_process,

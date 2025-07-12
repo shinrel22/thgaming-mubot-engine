@@ -51,6 +51,7 @@ class SimulatedDataMemory(BaseModel):
 class FuncCallback(BaseModel):
     offset: int = 0
     prototype: str
+    rsp_cache_key: str
 
 
 class FuncPatch(BaseModel):
@@ -65,6 +66,7 @@ class FuncTrigger(BaseModel):
 
 
 class GameFunction(BaseModel):
+    index: int = 0
     signature_pattern: str | None = None
     bytecodes: list[str]
     callbacks: dict[str, FuncCallback] = Field(default_factory=dict)
@@ -175,7 +177,6 @@ class GameCoord(GameObject, Coord):
     pass
 
 
-
 class GameText(GameObject):
     value: str = ''
 
@@ -229,7 +230,6 @@ class EngineSkillSettings(BaseModel):
 
     pve: EnginePVESkillSettings = EnginePVESkillSettings()
     pvp: EnginePVPSkillSettings = EnginePVPSkillSettings()
-
 
 
 class EngineLevelTrainingBreakpointSetting(BaseModel):
@@ -511,6 +511,7 @@ class LocalPlayer(PlayerBody):
     def total_levels(self) -> int:
         return self.level + self.master_level
 
+
 class ViewportObject(GameObject):
     index: int
     object_addr: int
@@ -563,6 +564,11 @@ class LobbyScreen(GameObject):
     character_slots: dict[str, int] = Field(default_factory=dict)
 
 
+class GameNotification(BaseModel):
+    title: str
+    timestamp: datetime.datetime
+
+
 class GameContext(GameObject):
     local_player: LocalPlayer | None = None
     player_inventory: PlayerInventory | None = None
@@ -578,6 +584,7 @@ class GameContext(GameObject):
     channels: dict[int, ServerChannel] = Field(default_factory=dict)
     login_screen: LoginScreen | None = None
     lobby_screen: LobbyScreen | None = None
+    notifications: dict[str, GameNotification] = Field(default_factory=dict)
 
 
 class EngineOperatorTrainingSpot(BaseModel):

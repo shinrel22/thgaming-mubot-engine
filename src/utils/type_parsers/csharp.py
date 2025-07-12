@@ -146,3 +146,23 @@ class CSharpTypeParser(BaseModel):
 
         # Decode to Python string (UTF-16 little-endian)
         return string_as_bytes.decode('utf-16-le')
+
+    def write_list(self, address: int, data: list[int | None], item_length: int = 8) -> int:
+
+        item_entry_addr = address + LIST_COUNT_OFFSET + LIST_COUNT_LENGTH
+        for index, item in enumerate(data):
+            item_addr = item_entry_addr + item_length * index
+            self.os_api.write_memory(
+                h_process=self.h_process,
+                address=item_addr,
+                data=item.to_bytes(item_length, 'little')
+            )
+
+        self.os_api.write_memory(
+            h_process=self.h_process,
+            address=address + LIST_COUNT_OFFSET,
+            data=len(data).to_bytes(LIST_COUNT_LENGTH, 'little'),
+        )
+
+        return address
+

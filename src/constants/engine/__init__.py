@@ -59,3 +59,18 @@ STAY_AND_KS: str = 'StayAndKs'
 
 # effect types
 EXP_BOOST_EFFECT_TYPE: str = 'ExpBoostEffects'
+
+
+# game events
+GAME_EVENT_QUIZ: str = 'GameEventQuiz'
+GAME_EVENT_STOP_OR_DIE: str = 'GameEventStopOrDie'
+GAME_EVENT_RED_DRAGON_INVASION: str = 'GameEventRedDragonInvasion'
+GAME_EVENT_GOLDEN_DRAGON_INVASION: str = 'GameEventGoldenDragonInvasion'
+GAME_EVENT_DEMON_INVASION: str = 'GameEventDemonInvasion'
+GAME_EVENT_SKELETON_KING_INVASION: str = 'GameEventSkeletonKingInvasion'
+GAME_EVENT_MOSS_MERCHANT: str = 'GameEventMossMerchant'
+GAME_EVENT_MEGA_DROP: str = 'GameEventMegaDrop'
+GAME_EVENT_LOREN_TREASURE: str = 'GameEventLorenTreasure'
+GAME_EVENT_CHAOS_INVASION: str = 'GameEventChaosInvasion'
+GAME_EVENT_DUNGEON_ZOMBIE: str = 'GameEventDungeonZombie'
+GAME_EVENT_LOST_TOWER_SURVIVAL: str = 'GameEventLostTowerSurvival'

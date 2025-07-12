@@ -62,7 +62,7 @@ class Engine(EnginePrototype):
     def _allocate_simulated_data_memory(self) -> SimulatedDataMemory:
         self._simulated_data_memory.ptr_base = self.os_api.allocate_memory(
             h_process=self.h_process,
-            size=1024
+            size=2048
         )
 
         ptr_count: int = 0
@@ -74,7 +74,7 @@ class Engine(EnginePrototype):
             elif param_name.startswith('data_'):
                 value = self.os_api.allocate_memory(
                     h_process=self.h_process,
-                    size=1024
+                    size=2048
                 )
             else:
                 raise Error(message='Unsupported param name: {}'.format(param_name))

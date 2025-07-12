@@ -130,6 +130,8 @@ class UnityMegaMUEngine(Engine):
         if not params:
             params = dict()
 
+        rsp_cache_addr = params[func_callback.rsp_cache_key]
+
         func = self.game_funcs[func_code]
 
         patching_prototype = [
@@ -173,13 +175,13 @@ class UnityMegaMUEngine(Engine):
             '   push r13',
             '   push r14',
             '   push r15',
-            '   mov r15, {ptr_rsp_cache}',
+            f'   mov r15, {rsp_cache_addr}',
             '   mov [r15], rsp',
 
             func_callback.prototype,
 
             'restore_registers:',
-            '    mov r15, {ptr_rsp_cache}',
+            f'    mov r15, {rsp_cache_addr}',
             '    mov rsp, [r15]',
             '    pop r15',
             '    pop r14',
@@ -312,6 +314,7 @@ class UnityMegaMUEngine(Engine):
                     data=patching_bytes
                 )
                 self._original_codes[game_func_addr] = original_bytes
+                print('Injected callback for ', func_code, hex(game_func_addr))
 
             for patching_name, patching_data in game_func.patches.items():
                 patching_addr = game_func_addr + patching_data.offset
