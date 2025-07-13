@@ -158,13 +158,6 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
     async def load_player_active_skills(self) -> dict[int, PlayerSkill]:
         if not self.engine.game_context.local_player:
             return dict()
-
-        self.engine.os_api.write_memory(
-            h_process=self.engine.h_process,
-            address=self.engine.simulated_data_memory.game_func_params.ptr_local_player,
-            data=self.engine.game_context.local_player.addr.to_bytes(length=8, byteorder='little')
-        )
-
         await self.engine.function_triggerer.get_player_skills()
 
         return self._load_player_skills(

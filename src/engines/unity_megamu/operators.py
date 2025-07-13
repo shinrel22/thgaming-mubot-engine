@@ -135,8 +135,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
             await asyncio.sleep(2)
             return
 
-        await self._refresh_player_skills()
-
         hp_rate = (player.current_hp / player.max_hp) * 100
         hp_percent_to_use_potion = settings.recovery.hp_percent_to_use_potion or 0
         hp_percent_to_use_skills = settings.recovery.hp_percent_to_use_skills or 0
@@ -200,23 +198,17 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if settings.recovery.use_skills_for_hp and hp_percent_to_use_skills > 0:
             if hp_rate < hp_percent_to_use_skills and settings.recovery.skill_ids_for_hp:
                 for skill_id in settings.recovery.skill_ids_for_hp:
-                    player_skill = self._player_skills.get(skill_id)
-                    if player_skill:
-                        await self._cast_skill(player_skill)
+                    await self._cast_skill(skill_id)
 
         if settings.recovery.use_skills_for_mp and mp_percent_to_use_skills > 0:
             if mp_rate < mp_percent_to_use_skills and settings.recovery.skill_ids_for_mp:
                 for skill_id in settings.recovery.skill_ids_for_mp:
-                    player_skill = self._player_skills.get(skill_id)
-                    if player_skill:
-                        await self._cast_skill(player_skill)
+                    await self._cast_skill(skill_id)
 
         if settings.recovery.use_skills_for_sd and sd_percent_to_use_skills > 0:
             if sd_rate < sd_percent_to_use_skills and settings.recovery.skill_ids_for_sd:
                 for skill_id in settings.recovery.skill_ids_for_sd:
-                    player_skill = self._player_skills.get(skill_id)
-                    if player_skill:
-                        await self._cast_skill(player_skill)
+                    await self._cast_skill(skill_id)
 
     def _get_item_from_inventory(self, item_type: str) -> GameItem | None:
         result = None
@@ -365,14 +357,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             offensive_skill_ids = self.engine.settings.skills.pve.offensive_skill_ids
             if offensive_skill_ids:
                 for skill_id in self.engine.settings.skills.pve.offensive_skill_ids:
-                    player_skill = self._player_skills.get(skill_id)
-
-                    if player_skill:
-                        await self._cast_skill(player_skill, target=viewport_monster)
-                    else:
-                        await self.engine.function_triggerer.melee_attack(
-                            target=viewport_monster
-                        )
+                    await self._cast_skill(skill_id, target=viewport_monster)
 
             else:
                 await self.engine.function_triggerer.melee_attack(
@@ -410,6 +395,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if not buff_skill_ids:
             return
 
+        await self._refresh_player_skills()
+
         current_effect_ids = list(map(
             lambda x: x.effect.id,
             self.engine.game_context.local_player.effects.values()
@@ -421,7 +408,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             bs = self._player_skills[buff_skill_id]
             if bs.skill.effect_id in current_effect_ids:
                 continue
-            await self._cast_skill(bs)
+            await self._cast_skill(buff_skill_id)
 
     async def _ensure_boost_items_are_used(self):
         if not self.engine.settings.inventory.use_boost_items:
@@ -454,9 +441,15 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 current_effect_types.add(EXP_BOOST_EFFECT_TYPE)
 
     async def _cast_skill(self,
-                          skill: PlayerSkill,
+                          skill_id: int,
                           target: ViewportObject = None,
                           coord: Coord = None):
+
+        await self._refresh_player_skills()
+
+        skill = self._player_skills.get(skill_id)
+        if not skill:
+            return
 
         now = get_now()
 

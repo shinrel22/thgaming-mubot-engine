@@ -92,6 +92,12 @@ class UnityMegaMUEngineFunctionTriggerer(EngineFunctionTriggerer):
 
     @ensure_no_conflicts
     async def get_player_skills(self):
+        self.engine.os_api.write_memory(
+            h_process=self.engine.h_process,
+            address=self.engine.simulated_data_memory.game_func_params.ptr_local_player,
+            data=self.engine.game_context.local_player.addr.to_bytes(length=8, byteorder='little')
+        )
+
         self._register_function(
             address=self.engine.simulated_data_memory.game_funcs[
                 FUNC_PLAYER_GET_ACTIVE_SKILLS
