@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from datetime import timedelta
 
 from src.bases.engines import GameItem, PlayerSkill, Coord
@@ -40,7 +41,11 @@ from src.utils import (calculate_distance,
 
 class UnityMegaMUEngineOperator(EngineOperator):
 
-    async def handle_events(self):
+    async def handle_game_events(self):
+        while not self.engine.shutdown_event.is_set():
+            await asyncio.sleep(0.1)
+
+    async def handle_dialog_events(self):
         while not self.engine.shutdown_event.is_set():
             await asyncio.sleep(0.1)
 
@@ -48,11 +53,11 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 continue
 
             try:
-                await self._handle_events()
+                await self._handle_dialog_events()
             except Exception as e:
                 capture_error(e)
 
-    async def _handle_events(self):
+    async def _handle_dialog_events(self):
         pass
         # if dialog.title == 'PARTY':
         #     if dialog.message in [
@@ -65,7 +70,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         #     pattern = r"with\s+(\w+)[.!?]?\s*$"
         #     match = re.search(pattern, dialog.message)
         #     if not match:
-        #         self.engine.game_action_handler.close_window(dialog.window)
+        #         self.engine.function_triggerer.close_window(dialog.window)
         #         return
         #
         #     player_name = match.group(1)
@@ -76,31 +81,31 @@ class UnityMegaMUEngineOperator(EngineOperator):
         #             break
         #
         #     if not viewport_player:
-        #         self.engine.game_action_handler.close_window(dialog.window)
+        #         self.engine.function_triggerer.close_window(dialog.window)
         #         return
         #
         #     receiving_logic = self.engine.settings.party.receiving_logic
         #
         #     if receiving_logic == REJECT_ALL:
-        #         self.engine.game_action_handler.close_window(dialog.window)
+        #         self.engine.function_triggerer.close_window(dialog.window)
         #         return
         #
         #     if receiving_logic == ACCEPT_ALL:
-        #         self.engine.game_action_handler.handle_party_request(
+        #         self.engine.function_triggerer.handle_party_request(
         #             viewport_player=viewport_player,
         #             accept=True
         #         )
-        #         self.engine.game_action_handler.close_window(dialog.window)
+        #         self.engine.function_triggerer.close_window(dialog.window)
         #         return
         #
         #     if receiving_logic == ACCEPT_FROM_LIST:
         #         name_list = [name.lower().strip() for name in self.engine.settings.party.accept_requests_from]
         #         if viewport_player.object.name.lower() in name_list:
-        #             self.engine.game_action_handler.handle_party_request(
+        #             self.engine.function_triggerer.handle_party_request(
         #                 viewport_player=viewport_player,
         #                 accept=True
         #             )
-        #             self.engine.game_action_handler.close_window(dialog.window)
+        #             self.engine.function_triggerer.close_window(dialog.window)
 
     async def handle_protection(self):
         while not self.engine.shutdown_event.is_set():
@@ -110,16 +115,27 @@ class UnityMegaMUEngineOperator(EngineOperator):
             except Exception as e:
                 capture_error(e)
 
+    async def _refresh_player_skills(self):
+        updated_at = self._player_skills_updated_at
+        if updated_at and updated_at + timedelta(seconds=5) > get_now():
+            return
+
+        self._player_skills = await self.engine.game_context_synchronizer.load_player_active_skills()
+        self._player_skills_updated_at = get_now()
+
     async def _handle_protection(self):
         settings = self.engine.settings.protection
         player = self.engine.game_context.local_player
         screen_id = self.engine.game_context.screen.screen_id
 
-        if not player or player.in_safe_zone or self.engine.meta.screen_mappings[GAME_PLAYING_SCREEN] != screen_id:
-            await asyncio.sleep(0.5)
+        if (not player or player.in_safe_zone
+                or self.engine.meta.screen_mappings[GAME_PLAYING_SCREEN] != screen_id
+                or self.engine.game_context.is_channel_switching
+                or not self.engine.game_context.player_inventory):
+            await asyncio.sleep(2)
             return
 
-        player_skills = await self.engine.game_context_synchronizer.load_player_active_skills()
+        await self._refresh_player_skills()
 
         hp_rate = (player.current_hp / player.max_hp) * 100
         hp_percent_to_use_potion = settings.recovery.hp_percent_to_use_potion or 0
@@ -142,13 +158,12 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     now = get_now()
                     cooldown = self._potion_cooldowns.get(HP_POTION_ITEM_TYPE) or now
                     if cooldown <= now:
-                        self.engine.game_action_handler.use_item(hp_potion)
+                        await self.engine.function_triggerer.use_item(
+                            hp_potion
+                        )
                         self._potion_cooldowns[
                             HP_POTION_ITEM_TYPE
                         ] = now + timedelta(seconds=self.engine.game_server.potion_cooldown)
-                else:
-                    if settings.back_to_town.when_no_hp_potions_left:
-                        await self._back_to_town()
 
         if settings.recovery.use_mp_potions and mp_percent_to_use_potion > 0:
             if mp_rate < mp_percent_to_use_potion:
@@ -159,13 +174,12 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     now = get_now()
                     cooldown = self._potion_cooldowns.get(MP_POTION_ITEM_TYPE) or now
                     if cooldown <= now:
-                        self.engine.game_action_handler.use_item(mp_potion)
+                        await self.engine.function_triggerer.use_item(
+                            mp_potion
+                        )
                         self._potion_cooldowns[
                             MP_POTION_ITEM_TYPE
                         ] = now + timedelta(seconds=self.engine.game_server.potion_cooldown)
-                else:
-                    if settings.back_to_town.when_no_mp_potions_left:
-                        await self._back_to_town()
 
         if settings.recovery.use_sd_potions and sd_percent_to_use_potion > 0:
             if sd_rate < sd_percent_to_use_potion:
@@ -176,32 +190,31 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     now = get_now()
                     cooldown = self._potion_cooldowns.get(SD_POTION_ITEM_TYPE) or now
                     if cooldown <= now:
-                        self.engine.game_action_handler.use_item(sd_potion)
+                        await self.engine.function_triggerer.use_item(
+                            sd_potion
+                        )
                         self._potion_cooldowns[
                             SD_POTION_ITEM_TYPE
                         ] = now + timedelta(seconds=self.engine.game_server.potion_cooldown)
-                else:
-                    if settings.back_to_town.when_no_sd_potions_left:
-                        await self._back_to_town()
 
         if settings.recovery.use_skills_for_hp and hp_percent_to_use_skills > 0:
             if hp_rate < hp_percent_to_use_skills and settings.recovery.skill_ids_for_hp:
                 for skill_id in settings.recovery.skill_ids_for_hp:
-                    player_skill = player_skills.get(skill_id)
+                    player_skill = self._player_skills.get(skill_id)
                     if player_skill:
                         await self._cast_skill(player_skill)
 
         if settings.recovery.use_skills_for_mp and mp_percent_to_use_skills > 0:
             if mp_rate < mp_percent_to_use_skills and settings.recovery.skill_ids_for_mp:
                 for skill_id in settings.recovery.skill_ids_for_mp:
-                    player_skill = player_skills.get(skill_id)
+                    player_skill = self._player_skills.get(skill_id)
                     if player_skill:
                         await self._cast_skill(player_skill)
 
         if settings.recovery.use_skills_for_sd and sd_percent_to_use_skills > 0:
             if sd_rate < sd_percent_to_use_skills and settings.recovery.skill_ids_for_sd:
                 for skill_id in settings.recovery.skill_ids_for_sd:
-                    player_skill = player_skills.get(skill_id)
+                    player_skill = self._player_skills.get(skill_id)
                     if player_skill:
                         await self._cast_skill(player_skill)
 
@@ -219,7 +232,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         town_id = self.engine.settings.protection.back_to_town.town_id
 
         while self.engine.game_context.screen.world_id != town_id:
-            self.engine.game_action_handler.change_world(town_id)
+            await self.engine.function_triggerer.change_world(town_id)
             await asyncio.sleep(5)
 
     async def handle_training(self):
@@ -230,17 +243,17 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 capture_error(e)
             await asyncio.sleep(0.1)
 
-    def _refresh_auto_accept_pt_settings(self):
+    async def _refresh_auto_accept_pt_settings(self):
         if self.engine.settings.party.auto_accept_while_training:
-            self.engine.game_action_handler.send_chat('/re auto')
+            await self.engine.function_triggerer.send_chat('/re auto')
         else:
-            self.engine.game_action_handler.send_chat('/re on')
+            await self.engine.function_triggerer.send_chat('/re on')
 
-    async def _handle_training(self):
+    async def _handle_training(self, training_spot: EngineOperatorTrainingSpot = None):
         if not self.engine.game_context.local_player:
-            return
+            return None
 
-        self._refresh_auto_accept_pt_settings()
+        await self._refresh_auto_accept_pt_settings()
         auto_accept_pt_requests = self.engine.settings.party.auto_accept_while_training
 
         if self.engine.game_context.local_player.in_safe_zone:
@@ -248,21 +261,24 @@ class UnityMegaMUEngineOperator(EngineOperator):
             await self._go_shopping()
             await self._move_items_to_warehouse()
 
+        if self._need_to_back_to_town():
+            await self._back_to_town()
+            return await self._handle_training(training_spot=training_spot)
+
         # first reset check
         training_type = await self._check_training_type()
         if training_type == RESET_TRAINING_TYPE:
             if self._player_resetable():
                 await self._reset_player()
 
-        training_spot = await self._find_training_spot()
+        if not training_spot:
+            training_spot = await self._find_training_spot()
 
         last_player_levels = self._get_player_levels()
 
         while True:
-            player_skills = await self.engine.game_context_synchronizer.load_player_active_skills()
-
             if self.engine.settings.party.auto_accept_while_training != auto_accept_pt_requests:
-                self._refresh_auto_accept_pt_settings()
+                await self._refresh_auto_accept_pt_settings()
                 auto_accept_pt_requests = self.engine.settings.party.auto_accept_while_training
 
             current_player_levels = self._get_player_levels()
@@ -270,7 +286,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 if training_spot.training_type == RESET_TRAINING_TYPE:
                     if self._player_resetable():
                         await self._reset_player()
-                        return
+                        return None
                 if not self._training_spot_valid(training_spot):
                     training_spot = await self._find_training_spot()
             last_player_levels = current_player_levels
@@ -278,9 +294,9 @@ class UnityMegaMUEngineOperator(EngineOperator):
             await self._ensure_items_are_picked_up(training_spot)
 
             if not self._within_area(
-                world=training_spot.world,
-                radius=self.engine.settings.location.training_radius,
-                coord=training_spot.monster_spot.coord
+                    world=training_spot.world,
+                    radius=self.engine.settings.location.training_radius,
+                    coord=training_spot.monster_spot.coord
             ):
                 await self._ensure_within_training_area(training_spot)
 
@@ -289,11 +305,11 @@ class UnityMegaMUEngineOperator(EngineOperator):
             await self._ensure_boost_items_are_used()
 
             if not viewport_monster:
+                await asyncio.sleep(0.1)
                 continue
 
             await self._ensure_buffs_are_casted(
                 self.engine.settings.skills.pve.buff_skill_ids,
-                player_skills
             )
 
             await self._ensure_monster_in_sight(training_spot, viewport_monster)
@@ -301,40 +317,67 @@ class UnityMegaMUEngineOperator(EngineOperator):
             await self._attack_monster(
                 training_spot,
                 viewport_monster,
-                player_skills,
             )
+
+            if self._need_to_back_to_town():
+                await self._back_to_town()
+                return await self._handle_training(
+                    training_spot=training_spot,
+                )
+            await asyncio.sleep(0.1)
+
+    def _need_to_back_to_town(self) -> bool:
+        settings = self.engine.settings.protection.back_to_town
+        if settings.when_no_hp_potions_left:
+            if not self._get_item_from_inventory(
+                    item_type=HP_POTION_ITEM_TYPE
+            ):
+                return True
+
+        if settings.when_no_mp_potions_left:
+            if not self._get_item_from_inventory(
+                    item_type=MP_POTION_ITEM_TYPE
+            ):
+                return True
+        if settings.when_no_sd_potions_left:
+            if not self._get_item_from_inventory(
+                    item_type=SD_POTION_ITEM_TYPE
+            ):
+                return True
+
+        return False
 
     async def _attack_monster(self,
                               training_spot: EngineOperatorTrainingSpot,
                               viewport_monster: ViewportObject,
-                              player_skills: dict[int, PlayerSkill],
                               max_attempts: int = 50
                               ):
 
         attempts = 0
         monster_hp = viewport_monster.object.current_hp
 
+        await self._refresh_player_skills()
+
         while self._viewport_monster_attackable(training_spot, viewport_monster) and attempts < max_attempts:
+
             await self._ensure_items_are_picked_up(training_spot)
 
             offensive_skill_ids = self.engine.settings.skills.pve.offensive_skill_ids
             if offensive_skill_ids:
                 for skill_id in self.engine.settings.skills.pve.offensive_skill_ids:
-                    player_skill = player_skills.get(skill_id)
+                    player_skill = self._player_skills.get(skill_id)
 
                     if player_skill:
                         await self._cast_skill(player_skill, target=viewport_monster)
                     else:
-                        self.engine.game_action_handler.melee_attack(
+                        await self.engine.function_triggerer.melee_attack(
                             target=viewport_monster
                         )
-                        await asyncio.sleep(0.1)
 
             else:
-                self.engine.game_action_handler.melee_attack(
+                await self.engine.function_triggerer.melee_attack(
                     target=viewport_monster
                 )
-                await asyncio.sleep(0.1)
 
             vpm = self.engine.game_context.viewport.object_monsters.get(viewport_monster.addr)
             if not vpm:
@@ -345,6 +388,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             else:
                 attempts = 0
             monster_hp = vpm.object.current_hp
+            await asyncio.sleep(0.1)
 
         vpm = self.engine.game_context.viewport.object_monsters.get(viewport_monster.addr)
         if vpm and (vpm.object.current_hp > 0 or not vpm.object.is_destroying):
@@ -362,8 +406,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         return player.level
 
     async def _ensure_buffs_are_casted(self,
-                                       buff_skill_ids: list[int],
-                                       player_skills: dict[int, PlayerSkill]):
+                                       buff_skill_ids: list[int]):
         if not buff_skill_ids:
             return
 
@@ -373,9 +416,9 @@ class UnityMegaMUEngineOperator(EngineOperator):
         ))
 
         for buff_skill_id in buff_skill_ids:
-            if buff_skill_id not in player_skills:
+            if buff_skill_id not in self._player_skills:
                 continue
-            bs = player_skills[buff_skill_id]
+            bs = self._player_skills[buff_skill_id]
             if bs.skill.effect_id in current_effect_ids:
                 continue
             await self._cast_skill(bs)
@@ -407,26 +450,24 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 # Can't apply exp boost twice
                 if EXP_BOOST_EFFECT_TYPE in current_effect_types:
                     continue
-                self.engine.game_action_handler.use_item(game_item)
-                await asyncio.sleep(0.1)
+                await self.engine.function_triggerer.use_item(game_item)
                 current_effect_types.add(EXP_BOOST_EFFECT_TYPE)
 
     async def _cast_skill(self,
                           skill: PlayerSkill,
                           target: ViewportObject = None,
                           coord: Coord = None):
+
         now = get_now()
 
         if skill.cooldown > 0:
             if skill.skill_id in self._skill_cooldowns:
                 if self._skill_cooldowns[skill.skill_id] > now:
-                    await asyncio.sleep(0.1)
                     return
             else:
                 self._skill_cooldowns[skill.skill_id] = now + timedelta(milliseconds=skill.cooldown)
 
-        self.engine.game_action_handler.cast_skill(skill, target, coord)
-        await asyncio.sleep(0.1)
+        await self.engine.function_triggerer.cast_skill(skill, target, coord)
 
     async def _ensure_items_are_repaired(self):
         if not self.engine.game_context.player_inventory:
@@ -438,8 +479,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             if game_item.storage_slot_index > 11:
                 continue
             if game_item.durability <= 5:
-                self.engine.game_action_handler.repair_item(game_item)
-                await asyncio.sleep(0.1)
+                await self.engine.function_triggerer.repair_item(game_item)
 
     async def _ensure_items_are_picked_up(self,
                                           training_spot: EngineOperatorTrainingSpot,
@@ -485,7 +525,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
             attempts: int = 0
 
-            while self._item_pickable(vpi) and attempts <= max_attempts:
+            while self._item_pickable(vpi) and attempts <= (max_attempts * 10):
+
                 # move to item
                 while calculate_distance(
                         (
@@ -497,12 +538,12 @@ class UnityMegaMUEngineOperator(EngineOperator):
                                 self.engine.game_context.local_player.current_coord.y
                         )
                 ) > 2:
-                    self.engine.game_action_handler.move_to_coord(vpi.object_coord)
-                    await asyncio.sleep(1)
+                    await self.engine.function_triggerer.move_to_coord(vpi.object_coord)
+                    await asyncio.sleep(0.1)
 
-                self.engine.game_action_handler.pickup_item(vpi)
+                await self.engine.function_triggerer.pickup_item(vpi)
                 attempts += 1
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
 
     def _item_pickable(self, viewport_item: ViewportObject) -> bool:
 
@@ -571,7 +612,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             return
 
         while self.engine.game_context.local_player.level >= self.engine.game_server.max_level:
-            self.engine.game_action_handler.reset_player(
+            await self.engine.function_triggerer.reset_player(
                 command=self.engine.game_server.ingame_rr_command
             )
             await asyncio.sleep(3)
@@ -581,7 +622,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 return
             for pm in self.engine.game_context.party_manager.members.values():
                 if pm.player_name == self.engine.game_context.local_player.name:
-                    self.engine.game_action_handler.kick_party_member(pm)
+                    await self.engine.function_triggerer.kick_party_member(pm)
                     break
 
     def _get_viewport_monster(self, training_spot) -> ViewportObject | None:
@@ -836,14 +877,17 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 vpp = viewport_players_in_area.pop()
                 if self._player_in_party(vpp):
                     has_party_members = True
+                    await asyncio.sleep(0.1)
                     continue
 
                 if ((not self.engine.game_context.party_manager.is_in_party
-                     or self.engine.game_context.party_manager.is_leader)
+                     or self.engine.game_context.party_manager.is_leader
+                     or len(self.engine.game_context.party_manager.members) < self.engine.game_server.max_party_members)
                         and self.engine.settings.party.auto_send_while_training):
                     accepted = await self._try_partying_player(vpp, ms)
                     if accepted:
                         has_party_members = True
+                await asyncio.sleep(0.1)
 
             if has_party_members:
                 matched_monster_spot = ms
@@ -940,7 +984,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             ):
                 return
 
-            self.engine.game_action_handler.move_to_coord(vpm.object_coord)
+            await self.engine.function_triggerer.move_to_coord(vpm.object_coord)
             attempts += 1
             await asyncio.sleep(1)
 
@@ -989,7 +1033,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     (player.current_coord.x, player.current_coord.y),
                     (vpp.object_coord.x, vpp.object_coord.y),
             ) > 2:
-                self.engine.game_action_handler.move_to_coord(vpp.object_coord)
+                await self.engine.function_triggerer.move_to_coord(vpp.object_coord)
                 await asyncio.sleep(1)
                 player = self.engine.game_context.local_player
                 vpp = self.engine.game_context.viewport.object_players.get(viewport_player.addr)
@@ -998,9 +1042,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
             now = get_now()
             if not last_sent or last_sent + timedelta(seconds=wait_time) <= now:
-                self.engine.game_action_handler.send_chat('pt pls')
-                await asyncio.sleep(0.1)
-                self.engine.game_action_handler.send_party_request(
+                await self.engine.function_triggerer.send_chat('pt pls')
+                await self.engine.function_triggerer.send_party_request(
                     viewport_player=vpp,
                 )
                 last_sent = now
@@ -1008,12 +1051,12 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 attempts += 1
 
             while wait_count < wait_time and not self._player_in_party(vpp):
-                await asyncio.sleep(1)
                 player = self.engine.game_context.local_player
                 vpp = self.engine.game_context.viewport.object_players.get(viewport_player.addr)
                 if not vpp:
                     return self._player_in_party(viewport_player)
                 wait_count += 1
+                await asyncio.sleep(1)
 
         return self._player_in_party(viewport_player)
 
@@ -1096,15 +1139,13 @@ class UnityMegaMUEngineOperator(EngineOperator):
                         training_spot.monster_spot.coord.y
                     )
                 )
-                print('path_to_ts_from_player', len(path_to_ts_from_player))
-                print('path_to_ts_from_player', len(path_to_ts_from_player))
                 if not path_to_ts_from_player or len(path_to_ts_from_player) > len(path_to_ms_from_tf):
                     await self._change_world(training_spot.world.id, fast_travel.code)
 
             if self.engine.game_context.screen.world_id != training_spot.world.id:
                 return await self._ensure_within_training_area(training_spot)
 
-            self.engine.game_action_handler.move_to_coord(training_spot.monster_spot.coord)
+            await self.engine.function_triggerer.move_to_coord(training_spot.monster_spot.coord)
 
             await asyncio.sleep(1)
 
@@ -1182,20 +1223,20 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     path_to_coord_from_fast_travel=path_to_coord_from_fast_travel
                 )
 
-            self.engine.game_action_handler.move_to_coord(coord)
+            await self.engine.function_triggerer.move_to_coord(coord)
             await asyncio.sleep(1)
 
         return None
 
     async def _change_world(self, world_id: int, fast_travel_code: str = None):
-        self.engine.game_action_handler.change_world(
+        await self.engine.function_triggerer.change_world(
             world_id,
             fast_travel_code=fast_travel_code
         )
         await asyncio.sleep(3)
 
         while self.engine.game_context.screen.world_id != world_id:
-            self.engine.game_action_handler.change_world(
+            await self.engine.function_triggerer.change_world(
                 world_id,
                 fast_travel_code=fast_travel_code
             )
@@ -1265,7 +1306,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 (nearest_coord.x, nearest_coord.y),
                 (player.current_coord.x, player.current_coord.y)
         ) > 3:
-            self.engine.game_action_handler.move_to_coord(nearest_coord)
+            await self.engine.function_triggerer.move_to_coord(nearest_coord)
             await asyncio.sleep(2)
             player = self.engine.game_context.local_player
 
@@ -1280,10 +1321,9 @@ class UnityMegaMUEngineOperator(EngineOperator):
             )
 
         while not self.engine.game_context.merchant.window.is_open:
-            self.engine.game_action_handler.move_to_coord(nearest_coord)
+            await self.engine.function_triggerer.move_to_coord(nearest_coord)
             await asyncio.sleep(1)
-            self.engine.game_action_handler.interact_npc(viewport_npc)
-            await asyncio.sleep(1)
+            await self.engine.function_triggerer.interact_npc(viewport_npc)
 
     async def _go_shopping(self):
         if not self.engine.game_context.local_player.in_safe_zone:
@@ -1326,7 +1366,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
                 if target_hp_potion:
                     while current_hp_potions < inv_settings.num_of_hp_potions:
-                        self.engine.game_action_handler.purchase_item(target_hp_potion)
+                        await self.engine.function_triggerer.purchase_item(target_hp_potion)
                         current_hp_potions += target_hp_potion.quantity
                         await asyncio.sleep(0.1)
 
@@ -1348,15 +1388,15 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
                 if target_mp_potion:
                     while current_mp_potions < inv_settings.num_of_mp_potions:
-                        self.engine.game_action_handler.purchase_item(target_mp_potion)
+                        await self.engine.function_triggerer.purchase_item(target_mp_potion)
                         current_mp_potions += target_mp_potion.quantity
                         await asyncio.sleep(0.1)
 
         while self.engine.game_context.merchant.window.is_open:
-            self.engine.game_action_handler.close_window(
+            await self.engine.function_triggerer.close_window(
                 self.engine.game_context.merchant.window
             )
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
 
     # ensure no mem leak
     def _clear_ignored_monsters(self):
@@ -1397,7 +1437,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             if gi.item_id not in drop_item_ids:
                 continue
 
-            self.engine.game_action_handler.drop_item(gi)
+            await self.engine.function_triggerer.drop_item(gi)
             await asyncio.sleep(0.1)
 
     async def _handle_auto_stats(self):
@@ -1435,5 +1475,4 @@ class UnityMegaMUEngineOperator(EngineOperator):
         for stat_code, adding_amount in adding_stats.items():
             if not adding_amount:
                 continue
-            self.engine.game_action_handler.add_stats(stat_code, adding_amount)
-            await asyncio.sleep(1)
+            await self.engine.function_triggerer.add_stats(stat_code, adding_amount)

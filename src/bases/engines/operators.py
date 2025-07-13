@@ -18,24 +18,14 @@ class EngineOperator(EngineOperatorPrototype):
         self._occupied_monster_spots = {}
         self._party_requests_sent = {}
         self._ignored_monsters = {}
-
-    async def handle_training(self):
-        raise NotImplementedError
-
-    async def handle_protection(self):
-        raise NotImplementedError
-
-    async def handle_basis_tasks(self):
-        raise NotImplementedError
-
-    async def handle_events(self):
-        raise NotImplementedError
+        self._player_skills = {}
+        self._player_skills_updated_at = None
 
     async def run(self):
         # starting permanent workers
         self._workers[self.handle_protection.__name__] = asyncio.create_task(self.handle_protection())
         self._workers[self.handle_basis_tasks.__name__] = asyncio.create_task(self.handle_basis_tasks())
-        self._workers[self.handle_events.__name__] = asyncio.create_task(self.handle_events())
+        # self._workers[self.handle_events.__name__] = asyncio.create_task(self.handle_events())
         while not self.engine.shutdown_event.is_set():
             handle_training_worker = self._workers.get(self.handle_training.__name__)
 

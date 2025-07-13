@@ -72,11 +72,7 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
 
     async def update_context(self) -> None:
         while not self.engine.game_context.addr:
-            self.engine.game_action_handler.trigger_function(
-                address=self.engine.simulated_data_memory.game_funcs[
-                    FUNC_GET_GAME_CONTEXT
-                ].triggers['main']
-            )
+            await self.engine.function_triggerer.get_game_context()
             self.engine.game_context.addr = self.engine.os_api.get_value_from_pointer(
                 h_process=self.engine.h_process,
                 pointer=self.engine.simulated_data_memory.game_func_params.ptr_game_context
@@ -169,12 +165,7 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
             data=self.engine.game_context.local_player.addr.to_bytes(length=8, byteorder='little')
         )
 
-        self.engine.game_action_handler.trigger_function(
-            address=self.engine.simulated_data_memory.game_funcs[
-                FUNC_PLAYER_GET_ACTIVE_SKILLS
-            ].triggers['main']
-        )
-        await asyncio.sleep(0.1)
+        await self.engine.function_triggerer.get_player_skills()
 
         return self._load_player_skills(
             address=self.engine.os_api.get_value_from_pointer(
@@ -760,7 +751,7 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
                 title=noti_title.strip().upper(),
                 timestamp=get_now(),
             )
-            self.engine.game_context.notifications[noti.title] = noti
+            self.engine.game_context.notifications.insert(0, noti)
             self._logger.info(noti.model_dump())
 
         self.engine.cs_type_parser.write_list(
@@ -768,11 +759,8 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
             data=[]
         )
 
-        # cleaned old notifications
-        for title in list(self.engine.game_context.notifications.keys()):
-            if self.engine.game_context.notifications[title].timestamp + timedelta(minutes=1) <= get_now():
-                self.engine.game_context.notifications.pop(title)
-
+        # only cache for 50 notis
+        self.engine.game_context.notifications = self.engine.game_context.notifications[:50]
 
     def _update_current_dialog(self) -> Dialog | None:
         dialog_addr = self.engine.os_api.get_value_from_pointer(
@@ -886,21 +874,9 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
 
             viewport_body_object_class_addr = self.engine.game_context.viewport_body_object_class_addr
             if viewport_body_object_class_addr is None:
-                self.engine.os_api.write_memory(
-                    h_process=self.engine.h_process,
-                    address=self.engine.simulated_data_memory.game_func_params.ptr_target_viewport_object,
-                    data=viewport_object_addr.to_bytes(8, 'little')
+                await self.engine.function_triggerer.is_viewport_object_item(
+                    address=viewport_object_addr
                 )
-
-                viewport_object_is_item_trigger = self.engine.simulated_data_memory.game_funcs[
-                    FUNC_VIEWPORT_OBJECT_IS_ITEM
-                ].triggers['main']
-
-                self.engine.game_action_handler.trigger_function(
-                    address=viewport_object_is_item_trigger,
-                )
-                await asyncio.sleep(0.1)
-
                 is_item = self.engine.os_api.get_value_from_pointer(
                     h_process=self.engine.h_process,
                     pointer=self.engine.simulated_data_memory.game_func_params.ptr_viewport_object_is_item,
@@ -1448,12 +1424,8 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
             height=item_height,
         )
 
-    def _load_game_data_tables(self) -> int:
-        self.engine.game_action_handler.trigger_function(
-            address=self.engine.simulated_data_memory.game_funcs[
-                FUNC_GET_GAME_DATA_TABLES
-            ].triggers['main']
-        )
+    async def _load_game_data_tables(self) -> int:
+        await self.engine.function_triggerer.get_game_data_tables()
 
         return self.engine.os_api.get_value_from_pointer(
             h_process=self.engine.h_process,

@@ -1,6 +1,4 @@
 import asyncio
-import json
-import os
 
 from src.constants.engine import (
     GAME_CONTEXT_SYNCHRONIZER,
@@ -8,11 +6,11 @@ from src.constants.engine import (
 )
 from src.bases.errors import Error
 
-from .game_action_handlers import EngineGameActionHandler
+from .function_triggerers import EngineFunctionTriggerer
 from .game_context_synchronizers import EngineGameContextSynchronizer
 from .operators import EngineOperator
 from .prototypes import EnginePrototype
-from .world_map_handler import WorldMapHandler
+from .world_map_handlers import WorldMapHandler
 from .data_models import (
     Coord, ChatFrame, GameContext,
     GameDatabase, PlayerClass, LocalPlayer, GameScreen, GameObject,
@@ -39,7 +37,7 @@ class Engine(EnginePrototype):
 
         self._game_context = None
         self._game_context_synchronizer = self._init_game_context_synchronizer()
-        self._game_action_handler = self._init_game_action_handler()
+        self._function_triggerer = self._init_function_triggerer()
         self._operator = self._init_operator()
         self._world_map_handler = WorldMapHandler(engine=self)
         self._original_codes = {}
@@ -53,7 +51,7 @@ class Engine(EnginePrototype):
     def _init_game_context_synchronizer(self) -> EngineGameContextSynchronizer:
         raise NotImplementedError
 
-    def _init_game_action_handler(self) -> EngineGameActionHandler:
+    def _init_function_triggerer(self) -> EngineFunctionTriggerer:
         raise NotImplementedError
 
     def _init_operator(self) -> EngineOperator:

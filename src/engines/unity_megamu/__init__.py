@@ -10,7 +10,7 @@ from src.bases.errors import Error
 from src.constants.engine import GAME_CHAR_SELECTION_SCREEN, GAME_PLAYING_SCREEN, GAME_LOGIN_SCREEN
 
 from .game_context_synchronizers import UnityMegaMUEngineGameContextSynchronizer
-from .game_action_handlers import UnityMegaMUEngineGameActionHandler
+from .function_triggerers import UnityMegaMUEngineFunctionTriggerer
 from .operators import UnityMegaMUEngineOperator
 from .data_models import (
     UnityMegaMUViewport,
@@ -29,7 +29,7 @@ class UnityMegaMUEngine(Engine):
 
     _game_context_synchronizer: UnityMegaMUEngineGameContextSynchronizer = PrivateAttr()
     _game_context: UnityMegaMUGameContext = PrivateAttr()
-    _game_action_handler: UnityMegaMUEngineGameActionHandler = PrivateAttr()
+    _function_triggerer: UnityMegaMUEngineFunctionTriggerer = PrivateAttr()
     _operator: UnityMegaMUEngineOperator = PrivateAttr()
     _simulated_data_memory: UnityMegaMUSimulatedDataMemory = PrivateAttr()
     _cs_type_parser: CSharpTypeParser = PrivateAttr()
@@ -47,8 +47,8 @@ class UnityMegaMUEngine(Engine):
     def cs_type_parser(self) -> CSharpTypeParser:
         return self._cs_type_parser
 
-    def _init_game_action_handler(self) -> UnityMegaMUEngineGameActionHandler:
-        return UnityMegaMUEngineGameActionHandler(engine=self)
+    def _init_function_triggerer(self) -> UnityMegaMUEngineFunctionTriggerer:
+        return UnityMegaMUEngineFunctionTriggerer(engine=self)
 
     def _init_game_context(self) -> UnityMegaMUGameContext:
         self._game_context = UnityMegaMUEngineGameContextSynchronizer.init_context(engine=self)
@@ -366,7 +366,7 @@ class UnityMegaMUEngine(Engine):
                or not self._game_context.channels):
             await asyncio.sleep(1)
 
-        self._game_action_handler.login_screen_submit_credential(
+        await self._function_triggerer.login_screen_submit_credential(
             username=self.autologin_settings.username,
             password=self.autologin_settings.password,
         )
@@ -390,7 +390,7 @@ class UnityMegaMUEngine(Engine):
                     'NO CONNECTION',
                     'ERROR'
                 ]:
-                    self._game_action_handler.close_window(
+                    await self._function_triggerer.close_window(
                         self._game_context.current_dialog.window
                     )
                     await asyncio.sleep(1)
@@ -416,7 +416,7 @@ class UnityMegaMUEngine(Engine):
             await asyncio.sleep(0.1)
             target_channel = self._game_context.channels.get(target_channel.id)
 
-        self._game_action_handler.login_screen_select_channel(target_channel.id)
+        await self._function_triggerer.login_screen_select_channel(target_channel.id)
         await asyncio.sleep(1)
 
         char_selection_screen_id = self.meta.screen_mappings[GAME_CHAR_SELECTION_SCREEN]
@@ -444,9 +444,8 @@ class UnityMegaMUEngine(Engine):
         if character_slot is None:
             return None
 
-        print('character_slot', character_slot)
         await asyncio.sleep(1)
-        self._game_action_handler.lobby_screen_select_character(character_slot)
+        await self._function_triggerer.lobby_screen_select_character(character_slot)
         await asyncio.sleep(1)
 
         attempts = 0
@@ -468,12 +467,12 @@ class UnityMegaMUEngine(Engine):
     async def start(self):
         await super().start()
 
-        # disable game's default autologin behavior
-        self._workers[
-            self._disable_default_autologin.__name__
-        ] = asyncio.create_task(self._disable_default_autologin())
-
         if self.autologin_settings and self.autologin_settings.enabled:
+            # disable game's default autologin behavior
+            self._workers[
+                self._disable_default_autologin.__name__
+            ] = asyncio.create_task(self._disable_default_autologin())
+
             # start auto login handler
             self._workers[
                 self._handle_autologin.__name__

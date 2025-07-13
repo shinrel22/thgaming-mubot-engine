@@ -547,6 +547,8 @@ class Trainer(TrainerPrototype):
 
         await engine.start()
 
+        await asyncio.sleep(1)
+
         self._os_api.resume_all_threads(pid)
 
         await self._websocket_server.send_message(

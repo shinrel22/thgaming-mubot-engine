@@ -15,6 +15,12 @@ from src.constants.engine import (
 )
 
 
+class LanguageDatabase(BaseModel):
+    anagram_index: dict
+    length_index: dict
+    position_index: dict
+
+
 class Coord(BaseModel):
     x: int
     y: int
@@ -201,6 +207,7 @@ class GameServer(BaseModel):
     max_level: int = 400
     has_master_level: bool = False
     max_master_level: int = 700
+    max_party_members: int = 5
     potion_cooldown: int = 0  # seconds
 
 
@@ -316,6 +323,8 @@ class EngineInventorySettings(BaseModel):
 class EnginePartySettings(BaseModel):
     auto_accept_while_training: bool = True
     auto_send_while_training: bool = True
+    only_send_to_specific_players: bool = False
+    players_to_send: list[str] = Field(default_factory=list)
     leave_party_after_rr: bool = False
     max_sending_attempts: int = 1
 
@@ -584,7 +593,7 @@ class GameContext(GameObject):
     channels: dict[int, ServerChannel] = Field(default_factory=dict)
     login_screen: LoginScreen | None = None
     lobby_screen: LobbyScreen | None = None
-    notifications: dict[str, GameNotification] = Field(default_factory=dict)
+    notifications: list[GameNotification] = Field(default_factory=list)
 
 
 class EngineOperatorTrainingSpot(BaseModel):
