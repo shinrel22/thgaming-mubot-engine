@@ -16,9 +16,8 @@ from src.os.windows import WindowsAPI
 from src.bases.errors import Error
 from src.bases.engines import EngineMeta, GameServer, GameDatabase, EngineSettings
 from src.engines.unity_megamu import UnityMegaMUEngine, UnityMegaMUEngineMeta, UnityMegaMUSettings
-from src.constants.engine.unity_megamu import FUNC_ADD_STATS, FUNC_NOTICE_FRAME_ADD_NEW_NOTICE, FUNC_LOGIN_SCREEN_SELECT_CHANNEL
 from src.constants import DATA_DIR, TMP_DIR
-from src.utils import scan_string, compress_data, decompress_data, hex_string_to_int_list, load_data_file
+from src.utils import scan_string, compress_data, decompress_data, load_data_file
 from config import ENVIRONMENT, ROOT_DIR, SECRET_KEY
 
 from .restful_servers import RestfulServer

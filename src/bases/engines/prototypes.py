@@ -19,7 +19,9 @@ from .data_models import (
     PartyMember,
     GameCoord, WorldCell, WorldMonsterSpot,
     EngineAutologinSettings, GameText, GameFunction,
-    LanguageDatabase
+    LanguageDatabase,
+    EngineOperatorTrainingSpot,
+    EngineOperatorEventParticipation, GameEvent
 )
 
 
@@ -200,6 +202,9 @@ class EngineFunctionTriggererPrototype(BaseModel):
     async def get_game_data_tables(self):
         raise NotImplementedError
 
+    async def get_game_events(self):
+        raise NotImplementedError
+
 
 class EngineOperatorPrototype(BaseModel):
     engine: EnginePrototype
@@ -212,6 +217,16 @@ class EngineOperatorPrototype(BaseModel):
     _ignored_monsters: dict[int, datetime] = PrivateAttr()
     _player_skills: dict[int, PlayerSkill] = PrivateAttr()
     _player_skills_updated_at: datetime | None = PrivateAttr()
+    _training_spot: EngineOperatorTrainingSpot | None = PrivateAttr()
+    _event_participators: dict[str, tuple[EngineOperatorEventParticipation, asyncio.Task]] = PrivateAttr()
+
+    @property
+    def training_spot(self) -> EngineOperatorTrainingSpot:
+        return self._training_spot
+
+    @property
+    def event_participators(self) -> dict[str, tuple[EngineOperatorEventParticipation, asyncio.Task]]:
+        return self._event_participators
 
     async def handle_training(self):
         raise NotImplementedError
@@ -239,6 +254,12 @@ class EngineGameContextSynchronizerPrototype(BaseModel):
     def init_context(cls,
                      engine: 'EnginePrototype',
                      ) -> GameContext:
+        raise NotImplementedError
+
+    async def get_events(self, taking_place_in: int = None) -> dict[str, GameEvent]:
+        raise NotImplementedError
+
+    async def load_player_active_skills(self) -> dict[int, PlayerSkill]:
         raise NotImplementedError
 
     async def update_context(self):
@@ -277,17 +298,20 @@ class WorldMapHandlerPrototype(BaseModel):
         raise NotImplementedError
 
 
-class QuizSolverPrototype(BaseModel):
+class EventParticipatorPrototype(BaseModel):
+    engine: EnginePrototype
+    participation: EngineOperatorEventParticipation
+
+    @classmethod
+    def init(cls, *args, **kwargs):
+        return cls(*args, **kwargs)
+
+    async def run(self):
+        raise NotImplementedError
+
+
+class QuizEventParticipatorPrototype(EventParticipatorPrototype):
+    _notification_last_check: datetime | None = None
     _language_databases: dict[str, LanguageDatabase] = PrivateAttr()
-
-    def solve_math(self, input_data: str) -> list[float]:
-        pass
-
-    def solve_jumbled_words(self, language: str, input_data: str) -> list[str]:
-        pass
-
-    def complete_words(self, language: str, pattern: str) -> list[str]:
-        pass
-
 
 EnginePrototype.model_rebuild()

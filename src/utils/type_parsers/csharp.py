@@ -1,3 +1,5 @@
+import datetime
+
 from pydantic import Field
 
 from src.bases.models import BaseModel
@@ -25,6 +27,16 @@ class CSharpTypeParser(BaseModel):
     os_api: OperatingSystemAPIPrototype
     pid: int
     h_process: int
+
+    def parse_datetime(self, address: int) -> datetime.datetime:
+        value = self.os_api.get_value_from_pointer(
+            h_process=self.h_process,
+            pointer=address,
+        )
+
+        base_datetime = datetime.datetime(1, 1, 1, tzinfo=datetime.timezone.utc)
+
+        return base_datetime + datetime.timedelta(seconds=value / (10**7))
 
     def parse_list(self,
                    address: int,

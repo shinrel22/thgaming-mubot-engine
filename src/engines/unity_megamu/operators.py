@@ -1,17 +1,22 @@
 import asyncio
+import functools
 import os
-import time
 from datetime import timedelta
 
-from src.bases.engines import GameItem, PlayerSkill, Coord
+from src.bases.engines import GameItem, Coord
 from src.bases.engines.data_models import (
-    ViewportObject, NPC, EngineOperatorTrainingSpot,
+    ViewportObject,
+    NPC,
     WorldFastTravel,
     WorldMonsterSpot,
-    EngineLevelTrainingBreakpointSetting, GameCoord, World, LocalPlayer, WorldCell,
+    EngineLevelTrainingBreakpointSetting,
+    GameCoord, World, WorldCell,
+    EngineOperatorTrainingSpot,
+    EngineOperatorEventParticipation,
 )
 from src.bases.errors import Error
 from src.bases.engines.operators import EngineOperator
+from src.bases.engines.prototypes import EventParticipatorPrototype
 from src.constants import DATA_DIR
 from src.constants.engine import (
     ENGINE_TRAINING_MODE,
@@ -30,7 +35,10 @@ from src.constants.engine import (
     EXP_BOOST_ITEM_TYPE,
     EXP_BOOST_EFFECT_TYPE,
     RESET_TRAINING_TYPE,
-    MASTER_TRAINING_TYPE, GAME_PLAYING_SCREEN
+    MASTER_TRAINING_TYPE,
+    GAME_PLAYING_SCREEN,
+    GAME_EVENT_QUIZ,
+    EVENT_PARTICIPATION_WAITING_STATUS
 )
 from src.utils import (calculate_distance,
                        capture_error,
@@ -38,74 +46,111 @@ from src.utils import (calculate_distance,
                        get_now,
                        load_data_file)
 
+from .event_participators import UnityMegaMUQuizEventParticipator
+
 
 class UnityMegaMUEngineOperator(EngineOperator):
 
-    async def handle_game_events(self):
-        while not self.engine.shutdown_event.is_set():
-            await asyncio.sleep(0.1)
+    async def _find_event_to_participate(self) -> EngineOperatorEventParticipation | None:
+        current_participation = None
+        for event_code, pw in self._event_participators.items():
+            if event_code in [
+                GAME_EVENT_QUIZ
+            ]:
+                continue
+            p, _ = pw
+            if p.status != EVENT_PARTICIPATION_WAITING_STATUS:
+                current_participation = p
+                break
 
-    async def handle_dialog_events(self):
-        while not self.engine.shutdown_event.is_set():
-            await asyncio.sleep(0.1)
+        # already participating in another event
+        if current_participation:
+            return None
 
-            if not self.engine.game_context.current_dialog:
+        matched_event = None
+        matched_setting = None
+
+        upcoming_events = await self.engine.game_context_synchronizer.get_events(
+            taking_place_in=60 * 5  # 5 mins
+        )
+
+        for event_code, event in upcoming_events.items():
+            if event_code in self._event_participators and event_code in [
+                GAME_EVENT_QUIZ
+            ]:
                 continue
 
-            try:
-                await self._handle_dialog_events()
-            except Exception as e:
-                capture_error(e)
+            event_setting = self.engine.settings.events.get(event_code)
+            if not event_setting or not event_setting.auto_participate:
+                continue
 
-    async def _handle_dialog_events(self):
-        pass
-        # if dialog.title == 'PARTY':
-        #     if dialog.message in [
-        #         'Do you want to leave the party?'
-        #     ]:
-        #         return
-        #     if dialog.message.startswith('Do you want to remove'):
-        #         return
-        #
-        #     pattern = r"with\s+(\w+)[.!?]?\s*$"
-        #     match = re.search(pattern, dialog.message)
-        #     if not match:
-        #         self.engine.function_triggerer.close_window(dialog.window)
-        #         return
-        #
-        #     player_name = match.group(1)
-        #     viewport_player = None
-        #     for vpp in self.engine.game_context.viewport.object_players.values():
-        #         if vpp.object.name == player_name:
-        #             viewport_player = vpp
-        #             break
-        #
-        #     if not viewport_player:
-        #         self.engine.function_triggerer.close_window(dialog.window)
-        #         return
-        #
-        #     receiving_logic = self.engine.settings.party.receiving_logic
-        #
-        #     if receiving_logic == REJECT_ALL:
-        #         self.engine.function_triggerer.close_window(dialog.window)
-        #         return
-        #
-        #     if receiving_logic == ACCEPT_ALL:
-        #         self.engine.function_triggerer.handle_party_request(
-        #             viewport_player=viewport_player,
-        #             accept=True
-        #         )
-        #         self.engine.function_triggerer.close_window(dialog.window)
-        #         return
-        #
-        #     if receiving_logic == ACCEPT_FROM_LIST:
-        #         name_list = [name.lower().strip() for name in self.engine.settings.party.accept_requests_from]
-        #         if viewport_player.object.name.lower() in name_list:
-        #             self.engine.function_triggerer.handle_party_request(
-        #                 viewport_player=viewport_player,
-        #                 accept=True
-        #             )
-        #             self.engine.function_triggerer.close_window(dialog.window)
+            if matched_event is None:
+                matched_event = event
+                matched_setting = event_setting
+            else:
+                if matched_setting.priority < event_setting.priority:
+                    matched_event = event
+                    matched_setting = event_setting
+
+        if not matched_event:
+            return None
+
+        return EngineOperatorEventParticipation(
+            setting=matched_setting,
+            event=matched_event,
+        )
+
+    async def _handle_game_event(self, participation: EngineOperatorEventParticipation):
+
+        event_participators: dict[str, type[EventParticipatorPrototype]] = {
+            GAME_EVENT_QUIZ: UnityMegaMUQuizEventParticipator
+        }
+        engine_last_mode = self.engine.mode
+        # prepare participator
+        event_participator = await self.engine.event_loop.run_in_executor(
+            None,
+            functools.partial(
+                event_participators[participation.event.code].init,
+                engine=self.engine,
+                participation=participation,
+            )
+        )
+
+        try:
+            await event_participator.run()
+            self._logger.info(f'Done participating event {participation.event.code}')
+        except Exception as e:
+            self._logger.error(f'Failed to participate event: {participation.event.code}')
+            capture_error(e)
+
+        self._event_participators.pop(participation.event.code, None)
+
+        if participation.event.code not in [
+            GAME_EVENT_QUIZ
+        ]:
+            self.engine.mode = engine_last_mode
+
+    async def handle_game_events(self):
+        while not self.engine.shutdown_event.is_set():
+            await asyncio.sleep(1)
+
+            if (not self.engine.game_context.local_player
+                    or self.engine.game_context.is_channel_switching
+                    or not self.engine.game_context.screen
+                    or self.engine.game_context.screen.is_world_loading):
+                await asyncio.sleep(5)
+                continue
+
+            participation = await self._find_event_to_participate()
+            if not participation:
+                continue
+            self._logger.info(f'participation found: {participation.model_dump()}')
+            self._event_participators[participation.event.code] = (
+                participation,
+                asyncio.create_task(
+                    self._handle_game_event(participation)
+                )
+            )
 
     async def handle_protection(self):
         while not self.engine.shutdown_event.is_set():
@@ -241,7 +286,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         else:
             await self.engine.function_triggerer.send_chat('/re on')
 
-    async def _handle_training(self, training_spot: EngineOperatorTrainingSpot = None):
+    async def _handle_training(self):
         if not self.engine.game_context.local_player:
             return None
 
@@ -255,7 +300,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         if self._need_to_back_to_town():
             await self._back_to_town()
-            return await self._handle_training(training_spot=training_spot)
+            return await self._handle_training()
 
         # first reset check
         training_type = await self._check_training_type()
@@ -263,8 +308,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
             if self._player_resetable():
                 await self._reset_player()
 
-        if not training_spot:
-            training_spot = await self._find_training_spot()
+        if not self._training_spot or not self._training_spot_valid():
+            self._training_spot = await self._find_training_spot()
 
         last_player_levels = self._get_player_levels()
 
@@ -275,24 +320,24 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
             current_player_levels = self._get_player_levels()
             if last_player_levels < current_player_levels:
-                if training_spot.training_type == RESET_TRAINING_TYPE:
+                if self._training_spot.training_type == RESET_TRAINING_TYPE:
                     if self._player_resetable():
                         await self._reset_player()
                         return None
-                if not self._training_spot_valid(training_spot):
-                    training_spot = await self._find_training_spot()
+                if not self._training_spot_valid():
+                    self._training_spot = await self._find_training_spot()
             last_player_levels = current_player_levels
 
-            await self._ensure_items_are_picked_up(training_spot)
+            await self._ensure_items_are_picked_up(self._training_spot)
 
             if not self._within_area(
-                    world=training_spot.world,
+                    world=self._training_spot.world,
                     radius=self.engine.settings.location.training_radius,
-                    coord=training_spot.monster_spot.coord
+                    coord=self._training_spot.monster_spot.coord
             ):
-                await self._ensure_within_training_area(training_spot)
+                await self._ensure_within_training_area(self._training_spot)
 
-            viewport_monster = self._get_viewport_monster(training_spot)
+            viewport_monster = self._get_viewport_monster(self._training_spot)
 
             await self._ensure_boost_items_are_used()
 
@@ -304,18 +349,16 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 self.engine.settings.skills.pve.buff_skill_ids,
             )
 
-            await self._ensure_monster_in_sight(training_spot, viewport_monster)
+            await self._ensure_monster_in_sight(self._training_spot, viewport_monster)
 
             await self._attack_monster(
-                training_spot,
+                self._training_spot,
                 viewport_monster,
             )
 
             if self._need_to_back_to_town():
                 await self._back_to_town()
-                return await self._handle_training(
-                    training_spot=training_spot,
-                )
+                return await self._handle_training()
             await asyncio.sleep(0.1)
 
     def _need_to_back_to_town(self) -> bool:
@@ -873,13 +916,11 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     await asyncio.sleep(0.1)
                     continue
 
-                if ((not self.engine.game_context.party_manager.is_in_party
-                     or self.engine.game_context.party_manager.is_leader
-                     or len(self.engine.game_context.party_manager.members) < self.engine.game_server.max_party_members)
-                        and self.engine.settings.party.auto_send_while_training):
+                if self._able_to_party_players():
                     accepted = await self._try_partying_player(vpp, ms)
                     if accepted:
                         has_party_members = True
+
                 await asyncio.sleep(0.1)
 
             if has_party_members:
@@ -925,6 +966,18 @@ class UnityMegaMUEngineOperator(EngineOperator):
             training_type=training_type,
             world_map=world_maps[world.id]
         )
+
+    def _able_to_party_players(self) -> bool:
+        if not self.engine.settings.party.auto_send_while_training:
+            return False
+
+        if self.engine.game_context.party_manager.is_in_party:
+            if not self.engine.game_context.party_manager.is_leader:
+                return False
+            if len(self.engine.game_context.party_manager.members) >= self.engine.game_server.max_party_members:
+                return False
+
+        return True
 
     def _get_nearest_fast_travel_to_monster_spot(self,
                                                  monster_spot: WorldMonsterSpot,
@@ -1063,6 +1116,10 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if viewport_player.addr not in self.engine.game_context.viewport.object_players:
             return False
 
+        if self.engine.settings.party.only_send_to_specific_players:
+            if viewport_player.object.name not in self.engine.settings.party.players_to_send:
+                return False
+
         if viewport_player.object.name in self._party_requests_sent:
             last_sent = self._party_requests_sent[viewport_player.object.name]
             if last_sent + timedelta(minutes=5) > get_now():
@@ -1084,12 +1141,12 @@ class UnityMegaMUEngineOperator(EngineOperator):
                         self.engine.game_context.party_manager.members.values()]
         return viewport_player.object.name.strip().lower() in member_names
 
-    def _training_spot_valid(self,
-                             training_spot: EngineOperatorTrainingSpot,
-                             ):
+    def _training_spot_valid(self) -> bool:
+        if not self._training_spot:
+            return False
 
         player_level = self._get_player_levels()
-        return training_spot.setting.from_levels <= player_level < training_spot.to_levels
+        return self._training_spot.setting.from_levels <= player_level < self._training_spot.to_levels
 
     @staticmethod
     def gen_training_spot_code(channel_id: int, world_id: int, coord: Coord):
@@ -1134,6 +1191,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 )
                 if not path_to_ts_from_player or len(path_to_ts_from_player) > len(path_to_ms_from_tf):
                     await self._change_world(training_spot.world.id, fast_travel.code)
+                    already_change_world_with_fast_travel = True
 
             if self.engine.game_context.screen.world_id != training_spot.world.id:
                 return await self._ensure_within_training_area(training_spot)
@@ -1160,6 +1218,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         player_levels = self._get_player_levels()
 
+        already_change_world_with_fast_travel = False
         if self.engine.game_context.screen.world_id != world_id:
             if fast_travel and fast_travel.lvl_require <= player_levels:
                 await self._change_world(world_id, fast_travel.code)
@@ -1188,7 +1247,9 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     coord.y
                 )
             )
-            if fast_travel and fast_travel.lvl_require <= player_levels:
+            if (fast_travel
+                    and fast_travel.lvl_require <= player_levels
+                    and not already_change_world_with_fast_travel):
                 if not path_to_coord_from_fast_travel:
                     path_to_coord_from_fast_travel = self.engine.world_map_handler.find_path(
                         cells=world_cells,
@@ -1205,6 +1266,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 if not path_to_coord_from_player or len(path_to_coord_from_player) > len(
                         path_to_coord_from_fast_travel):
                     await self._change_world(world_id, fast_travel.code)
+                    already_change_world_with_fast_travel = True
 
             if self.engine.game_context.screen.world_id != world_id:
                 return await self._go_to(
@@ -1340,7 +1402,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             sellig_item_types=[POTION_ITEM_TYPE]
         )
 
-        if inv_settings.buy_hp_potions and potion_merchant_npc:
+        if inv_settings.buy_hp_potions and inv_settings.num_of_hp_potions > 0 and potion_merchant_npc:
             if inv_settings.num_of_hp_potions > current_hp_potions:
 
                 if not self.engine.game_context.merchant.window.is_open:
@@ -1359,6 +1421,9 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
                 if target_hp_potion:
                     while current_hp_potions < inv_settings.num_of_hp_potions:
+                        print('buying hp potions')
+                        print('current_hp_potions', current_hp_potions)
+                        print('target_hp_potion.quantity', target_hp_potion.quantity)
                         await self.engine.function_triggerer.purchase_item(target_hp_potion)
                         current_hp_potions += target_hp_potion.quantity
                         await asyncio.sleep(0.1)
@@ -1381,6 +1446,9 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
                 if target_mp_potion:
                     while current_mp_potions < inv_settings.num_of_mp_potions:
+                        print('buying mp potions')
+                        print('current_mp_potions', current_mp_potions)
+                        print('target_mp_potion.quantity', target_mp_potion.quantity)
                         await self.engine.function_triggerer.purchase_item(target_mp_potion)
                         current_mp_potions += target_mp_potion.quantity
                         await asyncio.sleep(0.1)

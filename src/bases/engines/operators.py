@@ -20,12 +20,15 @@ class EngineOperator(EngineOperatorPrototype):
         self._ignored_monsters = {}
         self._player_skills = {}
         self._player_skills_updated_at = None
+        self._training_spot = None
+        self._event_participators = {}
 
     async def run(self):
         # starting permanent workers
         self._workers[self.handle_protection.__name__] = asyncio.create_task(self.handle_protection())
         self._workers[self.handle_basis_tasks.__name__] = asyncio.create_task(self.handle_basis_tasks())
-        # self._workers[self.handle_events.__name__] = asyncio.create_task(self.handle_events())
+        self._workers[self.handle_game_events.__name__] = asyncio.create_task(self.handle_game_events())
+
         while not self.engine.shutdown_event.is_set():
             handle_training_worker = self._workers.get(self.handle_training.__name__)
 

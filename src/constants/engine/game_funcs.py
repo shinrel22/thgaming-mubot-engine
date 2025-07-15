@@ -1,4 +1,3 @@
-# funcs
 FUNC_LOGIN_SCREEN_SUBMIT_ACCOUNT_CREDENTIAL: str = 'login_screen_submit_account_credential'
 FUNC_LOGIN_SCREEN_SELECT_CHANNEL: str = 'login_screen_select_channel'
 FUNC_LOBBY_SCREEN_SELECT_CHARACTER: str = 'lobby_screen_select_character'
@@ -26,16 +25,5 @@ FUNC_GET_GAME_CONTEXT: str = 'get_game_context'
 FUNC_GAME_CONTEXT_UPDATE: str = 'game_context_update'
 FUNC_CHAT_FRAME_ADD_NEW_CHAT: str = 'chat_frame_add_new_chat'
 FUNC_NOTICE_FRAME_ADD_NEW_NOTICE: str = 'notice_frame_add_new_notice'
+FUNC_GET_GAME_EVENTS: str = 'get_game_events'
 
-# events
-QUIZ_EVENT_SOLVE_MATH: str = 'QuizEventSolveMath'
-QUIZ_EVENT_FIND_WORD: str = 'QuizEventFindWord'
-
-QUIZ_EVENT_QUIZ_QUESTION_TITLES: dict[str, list[str]] = {
-    QUIZ_EVENT_SOLVE_MATH: [
-
-    ],
-    QUIZ_EVENT_FIND_WORD: [
-
-    ]
-}

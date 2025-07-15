@@ -11,6 +11,7 @@ ENGINE_OPERATOR: str = 'EngineOperator'
 # engine modes
 ENGINE_IDLE_MODE: str = 'EngineIdle'
 ENGINE_TRAINING_MODE: str = 'EngineTraining'
+ENGINE_PARTICIPATING_EVENT_MODE: str = 'EngineParticipatingEvent'
 
 RESET_TRAINING_TYPE: str = 'ResetTrainingType'
 MASTER_TRAINING_TYPE: str = 'MasterTrainingType'
@@ -60,7 +61,6 @@ STAY_AND_KS: str = 'StayAndKs'
 # effect types
 EXP_BOOST_EFFECT_TYPE: str = 'ExpBoostEffects'
 
-
 # game events
 GAME_EVENT_QUIZ: str = 'GameEventQuiz'
 GAME_EVENT_STOP_OR_DIE: str = 'GameEventStopOrDie'
@@ -74,3 +74,12 @@ GAME_EVENT_LOREN_TREASURE: str = 'GameEventLorenTreasure'
 GAME_EVENT_CHAOS_INVASION: str = 'GameEventChaosInvasion'
 GAME_EVENT_DUNGEON_ZOMBIE: str = 'GameEventDungeonZombie'
 GAME_EVENT_LOST_TOWER_SURVIVAL: str = 'GameEventLostTowerSurvival'
+
+# event participation statuses
+EVENT_PARTICIPATION_WAITING_STATUS: str = 'EventParticipationWaiting'
+EVENT_PARTICIPATION_STARTED_STATUS: str = 'EventParticipationStarted'
+EVENT_PARTICIPATION_ENDED_STATUS: str = 'EventParticipationEnded'
+
+NOTIFICATION_IGNORE_PATTERNS: list[str] = [
+    r'^\+\d+\s+EXPERIENCE$'  # exp notification
+]

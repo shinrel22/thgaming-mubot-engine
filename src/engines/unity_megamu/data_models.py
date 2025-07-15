@@ -105,6 +105,7 @@ class UnityMegaMUSimulatedFuncParams(SimulatedFuncParams):
     ptr_func_triggerer_rsp_cache: int
     ptr_save_notification_rsp_cache: int
     ptr_target_func: int
+    ptr_game_events: int
 
 
 class UnityMegaMUSimulatedDataMemory(SimulatedDataMemory):
@@ -253,8 +254,18 @@ class UnityMegaMUEngineMeta(EngineMeta):
     chat_frame_offset: int
     player_frame_offset: int
     player_window_offset: int
+    event_window_offset: int
     inventory_window_offset: int
     merchant_offset: int
+
+    ## offsets from event window addr
+    event_list_offset: int
+    # offsets from event addr
+    event_data_offset: int
+    event_time_offset: int
+    # offsets from event data addr
+    event_id_offset: int
+    event_name_offset: int
 
     # offsets from merchant window addr
     merchant_window_offset: int

@@ -20,8 +20,15 @@ setup_logging()
 logger = getLogger(__name__)
 
 
-def get_now() -> datetime.datetime:
-    return datetime.datetime.now(tz=datetime.timezone.utc)
+def get_now(local: bool = False) -> datetime.datetime:
+    result = datetime.datetime.now(tz=datetime.timezone.utc)
+    if local:
+        result = result.astimezone()
+    return result
+
+
+def get_local_timezone() -> datetime.timezone:
+    return datetime.datetime.now(tz=datetime.timezone.utc).astimezone().tzinfo
 
 
 def bytes_to_assembly(data: bytes, offset: int = 0, bits: int = 64) -> Iterable[CsInsn]:

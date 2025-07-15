@@ -11,7 +11,8 @@ from src.constants.engine import (
     PLAYER_ENE_STAT, PLAYER_CMD_STAT,
     JEWEL_ITEM_TYPE, EVENT_ITEM_TYPE,
     RUUH_BOX_ITEM_TYPE, KUNDUN_BOX_ITEM_TYPE,
-    ANC_ITEM_RARITY, FIND_OTHER_SPOTS, STAY_AND_KS,
+    ANC_ITEM_RARITY, FIND_OTHER_SPOTS, STAY_AND_KS, GAME_EVENT_QUIZ, GAME_EVENT_DUNGEON_ZOMBIE,
+    GAME_EVENT_LOREN_TREASURE, GAME_EVENT_MEGA_DROP, EVENT_PARTICIPATION_WAITING_STATUS,
 )
 
 
@@ -94,6 +95,10 @@ class EngineMeta(BaseModel):
         GAME_LOGIN_SCREEN: 2,
         GAME_CHAR_SELECTION_SCREEN: 3,
         GAME_PLAYING_SCREEN: 4,
+    }
+
+    event_mappings: dict[int, str] = {
+        24: GAME_EVENT_QUIZ,
     }
 
 
@@ -220,6 +225,12 @@ class SystemInfo(BaseModel):
 class Screen(BaseModel):
     id: int
     name: str
+
+
+class EngineGameEventSettings(BaseModel):
+    code: str
+    auto_participate: bool = False
+    priority: int = 1
 
 
 class EnginePVESkillSettings(BaseModel):
@@ -361,6 +372,10 @@ class EngineSettings(BaseModel):
     party: EnginePartySettings = EnginePartySettings()
     stats: EngineStatSettings = EngineStatSettings()
     account: EngineAccountSettings = EngineAccountSettings()
+    events: dict[str, EngineGameEventSettings] = {
+        GAME_EVENT_QUIZ: EngineGameEventSettings(code=GAME_EVENT_QUIZ,
+                                                 auto_participate=True),
+    }
 
 
 class GameScreen(GameObject):
@@ -578,6 +593,13 @@ class GameNotification(BaseModel):
     timestamp: datetime.datetime
 
 
+class GameEvent(BaseModel):
+    id: int
+    name: str
+    code: str
+    time: datetime.datetime
+
+
 class GameContext(GameObject):
     local_player: LocalPlayer | None = None
     player_inventory: PlayerInventory | None = None
@@ -594,6 +616,7 @@ class GameContext(GameObject):
     login_screen: LoginScreen | None = None
     lobby_screen: LobbyScreen | None = None
     notifications: list[GameNotification] = Field(default_factory=list)
+    events: dict[str, GameEvent] = Field(default_factory=dict)
 
 
 class EngineOperatorTrainingSpot(BaseModel):
@@ -611,6 +634,18 @@ class EngineOperatorTrainingSpot(BaseModel):
     def code(self) -> str:
         data = f'{self.world.id}${self.fast_travel.code}${self.monster_spot.coord.code}'
         return data
+
+
+class EngineOperatorEventParticipation(BaseModel):
+    setting: EngineGameEventSettings
+    event: GameEvent
+    status: str = EVENT_PARTICIPATION_WAITING_STATUS
+
+
+class EngineOperatorQuiz(BaseModel):
+    title: str
+    type: str
+    content: str
 
 
 class ChannelConnection(GameObject):

@@ -7,7 +7,7 @@ from src.bases.engines.data_models import (
     PlayerSkill, GameBody, World, GameItem,
     ViewportObject, NPCBody, Coord, GameCoord, Window, Item, PartyMember, PlayerBody, GameText
 )
-from src.constants.engine.unity_megamu import (
+from src.constants.engine.game_funcs import (
     FUNC_SUBMIT_TEXT,
     FUNC_PLAYER_MOVE,
     FUNC_PLAYER_ATTACK,
@@ -27,7 +27,11 @@ from src.constants.engine.unity_megamu import (
     FUNC_LOGIN_SCREEN_SELECT_CHANNEL,
     FUNC_LOGIN_SCREEN_SUBMIT_ACCOUNT_CREDENTIAL,
     FUNC_LOBBY_SCREEN_SELECT_CHARACTER,
-    FUNC_GET_GAME_CONTEXT, FUNC_PLAYER_GET_ACTIVE_SKILLS, FUNC_VIEWPORT_OBJECT_IS_ITEM, FUNC_GET_GAME_DATA_TABLES
+    FUNC_GET_GAME_CONTEXT,
+    FUNC_PLAYER_GET_ACTIVE_SKILLS,
+    FUNC_VIEWPORT_OBJECT_IS_ITEM,
+    FUNC_GET_GAME_DATA_TABLES,
+    FUNC_GET_GAME_EVENTS
 )
 from src.bases.errors import Error
 from src.utils import str_to_bytes, capture_error
@@ -72,6 +76,14 @@ class UnityMegaMUEngineFunctionTriggerer(EngineFunctionTriggerer):
             address=self.engine.simulated_data_memory.game_funcs[
                 FUNC_VIEWPORT_OBJECT_IS_ITEM
             ].triggers['main'],
+        )
+
+    @ensure_no_conflicts
+    async def get_game_events(self):
+        self._register_function(
+            address=self.engine.simulated_data_memory.game_funcs[
+                FUNC_GET_GAME_EVENTS
+            ].triggers['main']
         )
 
     @ensure_no_conflicts

@@ -4,17 +4,16 @@ import pickle
 from sympy import Eq, solve, Symbol, sympify, N
 from sympy.core.sympify import SympifyError
 
-from src.bases.engines.prototypes import QuizSolverPrototype
+from src.bases.engines.prototypes import QuizEventParticipatorPrototype
 from src.bases.engines.data_models import LanguageDatabase
 from src.constants import DATA_DIR
 
 
-
-class QuizSolver(QuizSolverPrototype):
-
+class QuizEventParticipator(QuizEventParticipatorPrototype):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        self._notification_last_check = None
         self._language_databases = {}
 
         for language in [
@@ -31,7 +30,8 @@ class QuizSolver(QuizSolverPrototype):
             with open(filepath, 'rb') as f:
                 self._language_databases[language] = LanguageDatabase(**pickle.load(f))
 
-    def solve_math(self, input_data: str) -> list[float]:
+    @staticmethod
+    def _solve_math(input_data: str) -> list[float | int | complex]:
         data_input = input_data.strip().lower()
 
         # Type 1: Equation with '=' (solve for x)
@@ -64,11 +64,11 @@ class QuizSolver(QuizSolverPrototype):
                 # Evaluate and convert to Python number
                 num_expr = N(expr)
                 if num_expr.is_Integer:
-                    return int(num_expr)
+                    return [int(num_expr)]
                 elif num_expr.is_real:
-                    return float(num_expr)
+                    return [float(num_expr)]
                 else:
-                    return complex(num_expr)
+                    return [complex(num_expr)]
             except SympifyError:
                 return "Error: Invalid expression syntax."
             except Exception as e:
@@ -106,7 +106,7 @@ class QuizSolver(QuizSolverPrototype):
 
         return sorted(candidates)
 
-    def complete_words(self, language: str, pattern: str):
+    def _complete_words(self, language: str, pattern: str):
         words = pattern.split(' ')
         word_patterns = []
         for word in words:
@@ -126,7 +126,7 @@ class QuizSolver(QuizSolverPrototype):
         phrases = [' '.join(phrase) for phrase in itertools.product(*solutions_per_word)]
         return phrases
 
-    def solve_jumbled_words(self, language: str, input_data: str) -> list[str]:
+    def _solve_jumbled_words(self, language: str, input_data: str) -> list[str]:
         db = self._language_databases[language]
         groups = []  # Preserve word groups
 

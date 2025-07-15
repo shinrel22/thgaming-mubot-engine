@@ -2,6 +2,7 @@ import asyncio
 import ctypes
 import json
 import struct
+import re
 from json import JSONDecodeError
 from datetime import timedelta
 
@@ -10,14 +11,14 @@ from src.bases.engines.game_context_synchronizers import EngineGameContextSynchr
 from src.bases.engines.data_models import (
     GameScreen, PlayerSkill, Skill, ViewportObject, PlayerBody, MonsterBody, NPCBody, SummonBody, GameCoord,
     Monster, NPC, GameItem, Item, Storage, GameBody, Coord, Window, Merchant, World, Effect,
-    GameEffect, PartyManager, PartyMember, Dialog, WorldCell, ServerChannel, LobbyScreen, GameNotification
+    GameEffect, PartyManager, PartyMember, Dialog, WorldCell, ServerChannel, LobbyScreen, GameNotification, GameEvent
 )
-from src.utils import capture_error, get_now
+from src.utils import capture_error, get_now, get_local_timezone
 from src.bases.errors import Error
 from src.constants.engine import (
     ITEM_LOCATION_INVENTORY,
     ITEM_LOCATION_GROUND,
-    ITEM_LOCATION_MERCHANT_STORAGE, OFFENSIVE_SKILL_TYPE, BUFF_SKILL_TYPE
+    ITEM_LOCATION_MERCHANT_STORAGE, OFFENSIVE_SKILL_TYPE, BUFF_SKILL_TYPE, NOTIFICATION_IGNORE_PATTERNS
 )
 from .data_models import (
     UnityMegaMUGameContext,
@@ -26,10 +27,6 @@ from .data_models import (
     UnityMegaMUPlayerInventory,
     UnityMegaMULocalPlayer,
     UnityMegaMUMerchant, UnityMegaMULoginScreen
-)
-from src.constants.engine.unity_megamu import (
-    FUNC_VIEWPORT_OBJECT_IS_ITEM,
-    FUNC_PLAYER_GET_ACTIVE_SKILLS, FUNC_GET_GAME_DATA_TABLES, FUNC_GET_GAME_CONTEXT
 )
 
 
@@ -147,9 +144,8 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
             self.engine.game_context.player_body_object_class_addr = player_body_object_class_addr
 
             self._update_local_player(local_player_addr)
-
-            self._update_notifications()
             await self._update_viewport()
+            self._update_notifications()
             self._update_chat_frame()
             self._update_player_inventory()
             self._update_party_manager()
@@ -583,12 +579,6 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
         )
         exp_rate = struct.unpack('f', struct.pack('I', exp_rate))[0]
 
-        skill_list_addr = self.engine.os_api.get_value_from_pointer(
-            h_process=self.engine.h_process,
-            pointer=address + self.engine.meta.player_skill_manager_offset,
-            offsets=[self.engine.meta.player_skill_list_offset]
-        )
-
         strength = self.decrypt_obscured_int(
             address=address + self.engine.meta.player_strength_offset
         )
@@ -678,7 +668,6 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
 
         local_player = UnityMegaMULocalPlayer(
             **player_body.model_dump(),
-            skills=self._load_player_skills(address=skill_list_addr),
             master_level=master_level,
             exp=exp,
             exp_rate=exp_rate,
@@ -738,6 +727,16 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
 
             noti_title = noti_title.strip().upper()
             if not noti_title:
+                continue
+
+            is_ignored = False
+            for ignore_pattern in NOTIFICATION_IGNORE_PATTERNS:
+                regex = re.compile(ignore_pattern, re.IGNORECASE)
+                if regex.match(noti_title):
+                    is_ignored = True
+                    break
+
+            if is_ignored:
                 continue
 
             noti = GameNotification(
@@ -975,6 +974,70 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
             value_size=self.engine.meta.coord_y_length
         )
         return GameCoord(x=x, y=y, addr=address)
+
+    async def get_events(self, taking_place_in: int = None) -> dict[str, GameEvent]:
+        result = dict()
+
+        if (not self.engine.game_context.addr
+                or not self.engine.game_context.local_player
+                or not self.engine.game_context.screen
+                or self.engine.game_context.screen.is_world_loading):
+            return result
+
+        if not self.engine.os_api.get_value_from_pointer(
+            h_process=self.engine.h_process,
+            pointer=self.engine.game_context.addr + self.engine.meta.game_ui_offset,
+            offsets=[self.engine.meta.event_window_offset]
+        ):
+            return result
+
+        await self.engine.function_triggerer.get_game_events()
+
+        list_addr = self.engine.os_api.get_value_from_pointer(
+            h_process=self.engine.h_process,
+            pointer=self.engine.simulated_data_memory.game_func_params.ptr_game_events
+        )
+
+        now = get_now(local=True)
+
+        for event_addr in self.engine.cs_type_parser.parse_generic_list(list_addr).items:
+            if not event_addr:
+                continue
+
+            time = self.engine.cs_type_parser.parse_datetime(event_addr + self.engine.meta.event_time_offset)
+            time = time.replace(tzinfo=get_local_timezone())
+
+            if taking_place_in:
+                if not (now < time <= (now + timedelta(seconds=taking_place_in))):
+                    continue
+
+            eid = self.engine.os_api.get_value_from_pointer(
+                h_process=self.engine.h_process,
+                pointer=event_addr + self.engine.meta.event_data_offset,
+                offsets=[ self.engine.meta.event_id_offset],
+                value_size=0x4
+            )
+
+            code = self.engine.meta.event_mappings.get(eid)
+            if not code:
+                continue
+
+            name_addr = self.engine.os_api.get_value_from_pointer(
+                h_process=self.engine.h_process,
+                pointer=event_addr + self.engine.meta.event_data_offset,
+                offsets=[self.engine.meta.event_name_offset]
+            )
+            name = self.engine.cs_type_parser.parse_string(name_addr)
+
+
+            result[code] = GameEvent(
+                time=time,
+                name=name,
+                id=eid,
+                code=code,
+            )
+
+        return result
 
     def _update_screen(self) -> GameScreen:
 
