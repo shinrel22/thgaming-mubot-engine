@@ -26,4 +26,4 @@ FUNC_GAME_CONTEXT_UPDATE: str = 'game_context_update'
 FUNC_CHAT_FRAME_ADD_NEW_CHAT: str = 'chat_frame_add_new_chat'
 FUNC_NOTICE_FRAME_ADD_NEW_NOTICE: str = 'notice_frame_add_new_notice'
 FUNC_GET_GAME_EVENTS: str = 'get_game_events'
-
+FUNC_STOP_OR_DIE_STATUE_AWAKE: str = 'stop_or_die_statue_awake'

@@ -5,6 +5,7 @@ from src.constants.engine import (
     ENGINE_OPERATOR, GAME_PLAYING_SCREEN, ENGINE_TRAINING_MODE, ENGINE_IDLE_MODE,
 )
 from src.bases.errors import Error
+from .action_handlers import ActionHandler
 
 from .function_triggerers import EngineFunctionTriggerer
 from .game_context_synchronizers import EngineGameContextSynchronizer
@@ -39,6 +40,7 @@ class Engine(EnginePrototype):
         self._game_context_synchronizer = self._init_game_context_synchronizer()
         self._function_triggerer = self._init_function_triggerer()
         self._operator = self._init_operator()
+        self._action_handler = self._init_action_handler()
         self._world_map_handler = WorldMapHandler(engine=self)
         self._original_codes = {}
 
@@ -55,6 +57,9 @@ class Engine(EnginePrototype):
         raise NotImplementedError
 
     def _init_operator(self) -> EngineOperator:
+        raise NotImplementedError
+
+    def _init_action_handler(self) -> ActionHandler:
         raise NotImplementedError
 
     def _allocate_simulated_data_memory(self) -> SimulatedDataMemory:
@@ -181,11 +186,10 @@ class Engine(EnginePrototype):
                 code='InvalidConditions',
                 message='Local player not found'
             )
-
-        self.mode = ENGINE_TRAINING_MODE
+        await self.operator.change_mode(ENGINE_TRAINING_MODE)
 
     async def stop_training(self):
-        self.mode = ENGINE_IDLE_MODE
+        await self.operator.change_mode(ENGINE_IDLE_MODE)
 
     async def start(self) -> None:
         if self._started:

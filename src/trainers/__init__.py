@@ -345,6 +345,7 @@ class Trainer(TrainerPrototype):
             },
             'stat_mappings': engine.meta.stat_mappings,
             'screen_mappings': engine.meta.screen_mappings,
+            'event_mappings': engine.meta.event_mappings,
         }
 
         if engine.game_context:

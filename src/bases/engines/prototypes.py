@@ -21,7 +21,7 @@ from .data_models import (
     EngineAutologinSettings, GameText, GameFunction,
     LanguageDatabase,
     EngineOperatorTrainingSpot,
-    EngineOperatorEventParticipation, GameEvent
+    EngineOperatorEventParticipation, GameEvent, WorldFastTravel, NPC
 )
 
 
@@ -45,6 +45,7 @@ class EnginePrototype(BaseModel):
     _game_context_synchronizer: 'EngineGameContextSynchronizerPrototype' = PrivateAttr()
     _function_triggerer: 'EngineFunctionTriggererPrototype' = PrivateAttr()
     _operator: 'EngineOperatorPrototype' = PrivateAttr()
+    _action_handler: 'ActionHandlerPrototype' = PrivateAttr()
     _world_map_handler: 'WorldMapHandlerPrototype' = PrivateAttr()
     _simulated_data_memory: SimulatedDataMemory = PrivateAttr()
     _event_loop: asyncio.AbstractEventLoop = PrivateAttr()
@@ -62,6 +63,10 @@ class EnginePrototype(BaseModel):
     @property
     def event_loop(self) -> asyncio.AbstractEventLoop:
         return self._event_loop
+
+    @property
+    def action_handler(self) -> 'ActionHandlerPrototype':
+        return self._action_handler
 
     @property
     def operator(self) -> 'EngineOperatorPrototype':
@@ -243,6 +248,9 @@ class EngineOperatorPrototype(BaseModel):
     async def handle_game_events(self):
         raise NotImplementedError
 
+    async def change_mode(self, mode: str):
+        raise NotImplementedError
+
     async def run(self) -> None:
         raise NotImplementedError
 
@@ -257,6 +265,9 @@ class EngineGameContextSynchronizerPrototype(BaseModel):
         raise NotImplementedError
 
     async def get_events(self, taking_place_in: int = None) -> dict[str, GameEvent]:
+        raise NotImplementedError
+
+    def get_player_levels(self) -> int:
         raise NotImplementedError
 
     async def load_player_active_skills(self) -> dict[int, PlayerSkill]:
@@ -313,5 +324,26 @@ class EventParticipatorPrototype(BaseModel):
 class QuizEventParticipatorPrototype(EventParticipatorPrototype):
     _notification_last_check: datetime | None = None
     _language_databases: dict[str, LanguageDatabase] = PrivateAttr()
+
+
+class ActionHandlerPrototype(BaseModel):
+    engine: EnginePrototype
+
+    async def change_world(self, world_id: int, fast_travel_code: str = None):
+        raise NotImplementedError
+
+    async def go_to(self,
+                    world_id: int,
+                    coord: Coord,
+                    fast_travel: WorldFastTravel = None,
+                    distance_error: int = 2,
+                    world_cells: dict[str: WorldCell] = None,
+                    path_to_coord_from_fast_travel: list[Coord] = None,
+                    ):
+        raise NotImplementedError
+
+    async def interact_npc(self, npc: NPC):
+        raise NotImplementedError
+
 
 EnginePrototype.model_rebuild()

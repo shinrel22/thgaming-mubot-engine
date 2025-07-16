@@ -23,6 +23,34 @@ class EngineOperator(EngineOperatorPrototype):
         self._training_spot = None
         self._event_participators = {}
 
+    @staticmethod
+    async def _cancel_worker(worker: asyncio.Task):
+        worker.cancel()
+        try:
+            await worker
+        except asyncio.CancelledError:
+            pass
+
+    async def change_mode(self, mode: str):
+        if mode == self.engine.mode:
+            return
+
+        if self.engine.mode == ENGINE_TRAINING_MODE:
+            handle_training_worker = self._workers.get(self.handle_training.__name__)
+            if handle_training_worker:
+                await self._cancel_worker(handle_training_worker)
+                self._workers.pop(self.handle_training.__name__, None)
+
+        if mode == ENGINE_TRAINING_MODE:
+            handle_training_worker = self._workers.get(self.handle_training.__name__)
+            # cancel existing worker
+            if handle_training_worker:
+                await self._cancel_worker(handle_training_worker)
+                self._workers.pop(self.handle_training.__name__, None)
+            self._workers[self.handle_training.__name__] = asyncio.create_task(self.handle_training())
+
+        self.engine.mode = mode
+
     async def run(self):
         # starting permanent workers
         self._workers[self.handle_protection.__name__] = asyncio.create_task(self.handle_protection())
@@ -30,26 +58,6 @@ class EngineOperator(EngineOperatorPrototype):
         self._workers[self.handle_game_events.__name__] = asyncio.create_task(self.handle_game_events())
 
         while not self.engine.shutdown_event.is_set():
-            handle_training_worker = self._workers.get(self.handle_training.__name__)
-
-            if self.engine.mode == ENGINE_TRAINING_MODE:
-                if handle_training_worker:
-                    if handle_training_worker.done():
-                        training_error = handle_training_worker.exception()
-                        if training_error:
-                            capture_error(training_error)
-                        else:
-                            # done training?
-                            self.engine.mode = ENGINE_IDLE_MODE
-                            self._workers.pop(self.handle_training.__name__)
-                else:
-                    self._workers[self.handle_training.__name__] = asyncio.create_task(self.handle_training())
-
-            else:
-                if handle_training_worker:
-                    handle_training_worker.cancel()
-                    self._workers.pop(self.handle_training.__name__)
-
             await asyncio.sleep(1)
 
         for worker in self._workers.values():

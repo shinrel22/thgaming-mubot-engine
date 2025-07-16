@@ -2,7 +2,7 @@ import asyncio
 
 from pydantic import PrivateAttr
 
-from src.bases.engines import Engine
+from src.bases.engines import Engine, ActionHandler
 from src.utils import assembly_to_bytes, bytes_to_assembly
 from src.bases.engines.data_models import SimulatedDataMemoryFunc, FuncCallback
 from src.utils.type_parsers.csharp import CSharpTypeParser
@@ -12,6 +12,7 @@ from src.constants.engine import GAME_CHAR_SELECTION_SCREEN, GAME_PLAYING_SCREEN
 from .game_context_synchronizers import UnityMegaMUEngineGameContextSynchronizer
 from .function_triggerers import UnityMegaMUEngineFunctionTriggerer
 from .operators import UnityMegaMUEngineOperator
+from .action_handlers import UnityMegaMUActionHandler
 from .data_models import (
     UnityMegaMUViewport,
     UnityMegaMUSettings,
@@ -59,6 +60,9 @@ class UnityMegaMUEngine(Engine):
 
     def _init_operator(self) -> UnityMegaMUEngineOperator:
         return UnityMegaMUEngineOperator(engine=self)
+
+    def _init_action_handler(self) -> UnityMegaMUActionHandler:
+        return UnityMegaMUActionHandler(engine=self)
 
     def _init_simulated_data_memory(self) -> UnityMegaMUSimulatedDataMemory:
         game_func_params: dict[str, int] = {}

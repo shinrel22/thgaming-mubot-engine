@@ -1,6 +1,6 @@
 import asyncio
 import datetime
-import time
+import functools
 
 from src.bases.engines.data_models import EngineOperatorQuiz
 from src.bases.engines.event_participators import QuizEventParticipator
@@ -10,7 +10,7 @@ from src.utils import get_now, capture_error
 
 STARTING_TITLE: str = 'QUIZ EVENT'
 ENDING_TITLE: str = 'QUIZ EVENT FINISHED'
-LOGGING_MSG_PREFIX: str = '[QUIZ EVENT]'
+LOGGING_MSG_PREFIX: str = '[QUIZ]'
 
 QUESTION_TITLES: list[str] = [
     'PORTUGUESE - DISCOVER THE WORD:',
@@ -22,16 +22,6 @@ QUESTION_TITLES: list[str] = [
 
 
 class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
-    def _get_notifications(self, from_time: datetime.datetime = None) -> list[str]:
-        notifications = self.engine.game_context.notifications
-        if from_time:
-            notifications = filter(
-                lambda gn: gn.timestamp >= from_time,
-                notifications,
-            )
-        results = list(map(lambda gn: gn.title, notifications))
-        return results
-
     async def _wait_for_started(self):
         self._logger.info(f'{LOGGING_MSG_PREFIX} Waiting for event to start')
 
@@ -115,6 +105,7 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
 
         for noti in self._get_notifications(from_time):
             if 'GOT IT RIGHT!' in noti:
+                self._logger.info(f'{LOGGING_MSG_PREFIX} Quiz solved')
                 return True
         return False
 
@@ -130,16 +121,12 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
         return ' '.join(result_as_list)
 
     async def _solve_quiz(self, quiz: EngineOperatorQuiz):
-        now = get_now()
-        start = time.time()
+        last_noti_check = get_now()
         attempted_results: set[str] = set()
 
         if quiz.type == event_constants.QUIZ_EVENT_SOLVE_MATH_TYPE:
-            self._logger.info(f'{LOGGING_MSG_PREFIX} Finding results for type: {quiz.type}')
             results = self._solve_math(input_data=quiz.content)
-            self._logger.info(f'{LOGGING_MSG_PREFIX} Done finding results in {time.time() - start} seconds')
-            self._logger.info(f'{LOGGING_MSG_PREFIX} Results: {results}')
-            while not self._is_quiz_solved(now):
+            while not self._is_quiz_solved(last_noti_check):
                 for r in results:
                     r = int(r)
                     if r in attempted_results:
@@ -149,7 +136,7 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                     )
                     attempted_results.add(r)
                     await asyncio.sleep(1)
-                    if self._is_quiz_solved(now):
+                    if self._is_quiz_solved(last_noti_check):
                         return
                 results = []
                 await asyncio.sleep(1)
@@ -158,41 +145,61 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
             language = language.strip().lower().replace(' ', '')
 
             if quiz.type == event_constants.QUIZ_EVENT_COMPLETE_WORD_TYPE:
-                results = self._complete_words(
-                    language=language,
-                    pattern=quiz.content
-                )
-
-                while not self._is_quiz_solved(now):
-                    for r in results:
-                        # check if the quiz content is updated from the server
-                        content_updated = False
-                        for noti in self._get_notifications(now):
-                            if '_' in noti:
-                                quiz.content = self._handle_quiz_content(
-                                    quiz_type=quiz.type,
-                                    content=noti
-                                )
-                                content_updated = True
-                                break
-                        now = get_now()
-                        if content_updated:
-                            results = self._complete_words(
-                                language=language,
-                                pattern=quiz.content
+                def _check_for_content_updates() -> str | None:
+                    _result = None
+                    for _noti in self._get_notifications(last_noti_check):
+                        if '_' in _noti:
+                            _result = self._handle_quiz_content(
+                                quiz_type=quiz.type,
+                                content=_noti
                             )
-                            break
+                    return _result
 
+                while not self._is_quiz_solved(last_noti_check):
+                    last_noti_check = get_now()
+
+                    highest_missing_ratio = 0
+                    for word in quiz.content.split(' '):
+                        missing_ratio = word.count('_') / len(word)
+                        if missing_ratio > highest_missing_ratio:
+                            highest_missing_ratio = missing_ratio
+
+                    if highest_missing_ratio > 0.5:
+                        self._logger.info(f'{LOGGING_MSG_PREFIX} Missing ratio is too high: {highest_missing_ratio}')
+                        await asyncio.sleep(2)
+                        new_content = _check_for_content_updates()
+                        if new_content and new_content != quiz.content:
+                            quiz.content = new_content
+                        continue
+
+                    results = await self.engine.event_loop.run_in_executor(
+                        None,
+                        functools.partial(
+                            self._complete_words,
+                            language=language,
+                            pattern=quiz.content
+                        )
+                    )
+
+                    for r in results:
                         if r in attempted_results:
                             continue
+
+                        self._logger.info(f'{LOGGING_MSG_PREFIX} Sending answer: {r}')
 
                         await self.engine.function_triggerer.send_chat(
                             f'/r {r}'
                         )
                         attempted_results.add(r)
-                        await asyncio.sleep(1)
-                        if self._is_quiz_solved(now):
+                        await asyncio.sleep(2)
+
+                        if self._is_quiz_solved(last_noti_check):
                             return
+
+                        new_content = _check_for_content_updates()
+                        if new_content and new_content != quiz.content:
+                            quiz.content = new_content
+                            break
 
                     await asyncio.sleep(1)
             else:
@@ -200,7 +207,7 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                     language=language,
                     input_data=quiz.content,
                 )
-                while not self._is_quiz_solved(now):
+                while not self._is_quiz_solved(last_noti_check):
                     for r in results:
                         if r in attempted_results:
                             continue
@@ -209,7 +216,7 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                         )
                         attempted_results.add(r)
                         await asyncio.sleep(1)
-                        if self._is_quiz_solved(now):
+                        if self._is_quiz_solved(last_noti_check):
                             return
                     results = []
                     await asyncio.sleep(1)
@@ -227,3 +234,7 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                 self._logger.info(f'{LOGGING_MSG_PREFIX} Failed to solve quiz {quiz.model_dump()}')
                 capture_error(e)
             await asyncio.sleep(0.1)
+
+
+
+

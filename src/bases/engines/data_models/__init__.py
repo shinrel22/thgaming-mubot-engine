@@ -12,7 +12,7 @@ from src.constants.engine import (
     JEWEL_ITEM_TYPE, EVENT_ITEM_TYPE,
     RUUH_BOX_ITEM_TYPE, KUNDUN_BOX_ITEM_TYPE,
     ANC_ITEM_RARITY, FIND_OTHER_SPOTS, STAY_AND_KS, GAME_EVENT_QUIZ, GAME_EVENT_DUNGEON_ZOMBIE,
-    GAME_EVENT_LOREN_TREASURE, GAME_EVENT_MEGA_DROP, EVENT_PARTICIPATION_WAITING_STATUS,
+    GAME_EVENT_LOREN_TREASURE, GAME_EVENT_MEGA_DROP, EVENT_PARTICIPATION_WAITING_STATUS, GAME_EVENT_STOP_OR_DIE,
 )
 
 
@@ -99,6 +99,7 @@ class EngineMeta(BaseModel):
 
     event_mappings: dict[int, str] = {
         24: GAME_EVENT_QUIZ,
+        94: GAME_EVENT_STOP_OR_DIE,
     }
 
 
@@ -373,8 +374,14 @@ class EngineSettings(BaseModel):
     stats: EngineStatSettings = EngineStatSettings()
     account: EngineAccountSettings = EngineAccountSettings()
     events: dict[str, EngineGameEventSettings] = {
-        GAME_EVENT_QUIZ: EngineGameEventSettings(code=GAME_EVENT_QUIZ,
-                                                 auto_participate=True),
+        GAME_EVENT_QUIZ: EngineGameEventSettings(
+            code=GAME_EVENT_QUIZ,
+            auto_participate=True
+        ),
+        GAME_EVENT_STOP_OR_DIE: EngineGameEventSettings(
+            code=GAME_EVENT_STOP_OR_DIE,
+            auto_participate=True
+        ),
     }
 
 
@@ -439,9 +446,10 @@ class GameBody(GameObject):
     current_ag: int = 0
     max_ag: int = 0
     is_destroying: bool = False
+    is_moving: bool = False
     in_safe_zone: bool = False
     current_coord: GameCoord
-    target_coord: GameCoord
+    target_coord: GameCoord | None = None
     last_update: datetime.datetime = Field(default_factory=get_now)
 
 

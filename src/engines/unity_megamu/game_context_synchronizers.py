@@ -975,6 +975,14 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
         )
         return GameCoord(x=x, y=y, addr=address)
 
+    def get_player_levels(self) -> int:
+        player = self.engine.game_context.local_player
+
+        if player.level >= self.engine.game_server.max_level:
+            return player.level + player.master_level
+
+        return player.level
+
     async def get_events(self, taking_place_in: int = None) -> dict[str, GameEvent]:
         result = dict()
 
@@ -1003,7 +1011,6 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
         for event_addr in self.engine.cs_type_parser.parse_generic_list(list_addr).items:
             if not event_addr:
                 continue
-
             time = self.engine.cs_type_parser.parse_datetime(event_addr + self.engine.meta.event_time_offset)
             time = time.replace(tzinfo=get_local_timezone())
 
@@ -1018,9 +1025,7 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
                 value_size=0x4
             )
 
-            code = self.engine.meta.event_mappings.get(eid)
-            if not code:
-                continue
+            code = self.engine.meta.event_mappings.get(eid, str(eid))
 
             name_addr = self.engine.os_api.get_value_from_pointer(
                 h_process=self.engine.h_process,
@@ -1028,7 +1033,6 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
                 offsets=[self.engine.meta.event_name_offset]
             )
             name = self.engine.cs_type_parser.parse_string(name_addr)
-
 
             result[code] = GameEvent(
                 time=time,
@@ -1229,15 +1233,7 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
             byteorder='little'
         )
         current_coord = self._load_coord_from_addr(address=current_coord_addr)
-        target_coord_addr = int.from_bytes(
-            self.engine.os_api.read_memory(
-                h_process=self.engine.h_process,
-                address=address + self.engine.meta.game_body_target_coord_offset,
-                size=8
-            ),
-            byteorder='little'
-        )
-        target_coord = self._load_coord_from_addr(address=target_coord_addr)
+
         is_destroying = int.from_bytes(
             self.engine.os_api.read_memory(
                 h_process=self.engine.h_process,
@@ -1245,6 +1241,11 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
                 size=1
             ),
             byteorder='little'
+        ) == 1
+        is_moving = self.engine.os_api.get_value_from_pointer(
+            h_process=self.engine.h_process,
+            pointer=address + self.engine.meta.game_body_movement_offset,
+            offsets=[self.engine.meta.game_body_moving_flag_offset]
         ) == 1
 
         world_cell_addr = self.engine.os_api.get_value_from_pointer(
@@ -1258,8 +1259,8 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
             addr=address,
             index=index,
             current_coord=current_coord,
-            target_coord=target_coord,
             is_destroying=is_destroying,
+            is_moving=is_moving,
             name=name,
             class_id=class_id,
             level=level,

@@ -104,8 +104,10 @@ class UnityMegaMUSimulatedFuncParams(SimulatedFuncParams):
     ptr_world_cell: int
     ptr_func_triggerer_rsp_cache: int
     ptr_save_notification_rsp_cache: int
+    ptr_stop_or_die_statue_awake_rsp_cache: int
     ptr_target_func: int
     ptr_game_events: int
+    ptr_stop_or_die_statue: int
 
 
 class UnityMegaMUSimulatedDataMemory(SimulatedDataMemory):
@@ -332,7 +334,11 @@ class UnityMegaMUEngineMeta(EngineMeta):
     game_body_summon_owner_name_offset: int
     game_body_is_destroying_offset: int
     game_body_skeleton_offset: int
+    game_body_movement_offset: int
     game_body_world_cell_offset: int
+
+    # offsets from body movement addr
+    game_body_moving_flag_offset: int
 
     # offsets from skeleton addr
     skeleton_monster_id_offset: int
@@ -407,3 +413,6 @@ class UnityMegaMUEngineMeta(EngineMeta):
     ## offsets from effect table world addr
     table_world_generic_list_offset: int
     table_world_fast_travel_generic_list_offsets: list[int]
+
+    ## offsets from stop or die statue addr
+    stop_or_die_red_signal_flag_offset: int

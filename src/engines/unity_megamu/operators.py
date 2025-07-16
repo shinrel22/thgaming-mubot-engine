@@ -38,6 +38,7 @@ from src.constants.engine import (
     MASTER_TRAINING_TYPE,
     GAME_PLAYING_SCREEN,
     GAME_EVENT_QUIZ,
+    GAME_EVENT_STOP_OR_DIE,
     EVENT_PARTICIPATION_WAITING_STATUS
 )
 from src.utils import (calculate_distance,
@@ -46,12 +47,13 @@ from src.utils import (calculate_distance,
                        get_now,
                        load_data_file)
 
-from .event_participators import UnityMegaMUQuizEventParticipator
+from .event_participators.quiz import UnityMegaMUQuizEventParticipator
+from .event_participators.stop_or_die import UnityMegaMUStopOrDieEventParticipator
 
 
 class UnityMegaMUEngineOperator(EngineOperator):
 
-    async def _find_event_to_participate(self) -> EngineOperatorEventParticipation | None:
+    async def _wait_for_event_to_participate(self) -> EngineOperatorEventParticipation | None:
         current_participation = None
         for event_code, pw in self._event_participators.items():
             if event_code in [
@@ -103,7 +105,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
     async def _handle_game_event(self, participation: EngineOperatorEventParticipation):
 
         event_participators: dict[str, type[EventParticipatorPrototype]] = {
-            GAME_EVENT_QUIZ: UnityMegaMUQuizEventParticipator
+            GAME_EVENT_QUIZ: UnityMegaMUQuizEventParticipator,
+            GAME_EVENT_STOP_OR_DIE: UnityMegaMUStopOrDieEventParticipator,
         }
         engine_last_mode = self.engine.mode
         # prepare participator
@@ -125,14 +128,15 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         self._event_participators.pop(participation.event.code, None)
 
+        # change to the engine's last mode after participating in events
         if participation.event.code not in [
             GAME_EVENT_QUIZ
         ]:
-            self.engine.mode = engine_last_mode
+            await self.change_mode(engine_last_mode)
 
     async def handle_game_events(self):
         while not self.engine.shutdown_event.is_set():
-            await asyncio.sleep(1)
+            await asyncio.sleep(30)
 
             if (not self.engine.game_context.local_player
                     or self.engine.game_context.is_channel_switching
@@ -141,10 +145,10 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 await asyncio.sleep(5)
                 continue
 
-            participation = await self._find_event_to_participate()
+            participation = await self._wait_for_event_to_participate()
             if not participation:
                 continue
-            self._logger.info(f'participation found: {participation.model_dump()}')
+            self._logger.info(f'Upcoming event to participate: {participation.event.code}')
             self._event_participators[participation.event.code] = (
                 participation,
                 asyncio.create_task(
@@ -311,14 +315,14 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if not self._training_spot or not self._training_spot_valid():
             self._training_spot = await self._find_training_spot()
 
-        last_player_levels = self._get_player_levels()
+        last_player_levels = self.engine.game_context_synchronizer.get_player_levels()
 
         while True:
             if self.engine.settings.party.auto_accept_while_training != auto_accept_pt_requests:
                 await self._refresh_auto_accept_pt_settings()
                 auto_accept_pt_requests = self.engine.settings.party.auto_accept_while_training
 
-            current_player_levels = self._get_player_levels()
+            current_player_levels = self.engine.game_context_synchronizer.get_player_levels()
             if last_player_levels < current_player_levels:
                 if self._training_spot.training_type == RESET_TRAINING_TYPE:
                     if self._player_resetable():
@@ -424,14 +428,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
             return
 
         self._ignored_monsters.pop(viewport_monster.addr, None)
-
-    def _get_player_levels(self) -> int:
-        player = self.engine.game_context.local_player
-
-        if player.level >= self.engine.game_server.max_level:
-            return player.level + player.master_level
-
-        return player.level
 
     async def _ensure_buffs_are_casted(self,
                                        buff_skill_ids: list[int]):
@@ -647,6 +643,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if self.engine.game_context.local_player.reset_count >= self.engine.game_server.max_rr:
             return
 
+        await self.engine.action_handler.change_world(world_id=0)
+
         while self.engine.game_context.local_player.level >= self.engine.game_server.max_level:
             await self.engine.function_triggerer.reset_player(
                 command=self.engine.game_server.ingame_rr_command
@@ -767,7 +765,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         level_breakpoint: EngineLevelTrainingBreakpointSetting = None
 
-        player_levels = self._get_player_levels()
+        player_levels = self.engine.game_context_synchronizer.get_player_levels()
 
         if training_type == RESET_TRAINING_TYPE:
             reset_breakpoint = None
@@ -886,7 +884,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
             world_map = world_maps[ms.world_id]
 
-            await self._go_to(
+            await self.engine.action_handler.go_to(
                 ms.world_id,
                 ms.coord,
                 fast_travel,
@@ -983,7 +981,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                                                  monster_spot: WorldMonsterSpot,
                                                  lte_player_levels: bool = False,
                                                  ) -> WorldFastTravel | None:
-        player_levels = self._get_player_levels()
+        player_levels = self.engine.game_context_synchronizer.get_player_levels()
         world = self.engine.game_database.worlds[monster_spot.world_id]
         result = None
         length = None
@@ -1145,7 +1143,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if not self._training_spot:
             return False
 
-        player_level = self._get_player_levels()
+        player_level = self.engine.game_context_synchronizer.get_player_levels()
         return self._training_spot.setting.from_levels <= player_level < self._training_spot.to_levels
 
     @staticmethod
@@ -1160,15 +1158,15 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         fast_travel = training_spot.fast_travel
         path_to_ms_from_tf = training_spot.monster_spot.fast_travels[fast_travel.code]
-        player_levels = self._get_player_levels()
+        player_levels = self.engine.game_context_synchronizer.get_player_levels()
 
         already_change_world_with_fast_travel = False
         while self.engine.game_context.screen.world_id != training_spot.world.id:
             if fast_travel.lvl_require <= player_levels:
-                await self._change_world(training_spot.world.id, fast_travel.code)
+                await self.engine.action_handler.change_world(training_spot.world.id, fast_travel.code)
                 already_change_world_with_fast_travel = True
             else:
-                await self._change_world(training_spot.world.id)
+                await self.engine.action_handler.change_world(training_spot.world.id)
 
         while not self._within_area(
                 world=training_spot.world,
@@ -1190,7 +1188,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                     )
                 )
                 if not path_to_ts_from_player or len(path_to_ts_from_player) > len(path_to_ms_from_tf):
-                    await self._change_world(training_spot.world.id, fast_travel.code)
+                    await self.engine.action_handler.change_world(training_spot.world.id, fast_travel.code)
                     already_change_world_with_fast_travel = True
 
             if self.engine.game_context.screen.world_id != training_spot.world.id:
@@ -1201,104 +1199,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
             await asyncio.sleep(1)
 
         return None
-
-    async def _go_to(self,
-                     world_id: int,
-                     coord: Coord,
-                     fast_travel: WorldFastTravel = None,
-                     distance_error: int = 2,
-                     world_cells: dict[str: WorldCell] = None,
-                     path_to_coord_from_fast_travel: list[Coord] = None,
-                     ):
-        while self.engine.game_context.is_channel_switching:
-            await asyncio.sleep(1)
-
-        if not world_cells:
-            world_cells = self.engine.world_map_handler.load_world_cells(world_id)
-
-        player_levels = self._get_player_levels()
-
-        already_change_world_with_fast_travel = False
-        if self.engine.game_context.screen.world_id != world_id:
-            if fast_travel and fast_travel.lvl_require <= player_levels:
-                await self._change_world(world_id, fast_travel.code)
-            else:
-                await self._change_world(world_id)
-
-        while calculate_distance(
-                (
-                        self.engine.game_context.local_player.current_coord.x,
-                        self.engine.game_context.local_player.current_coord.y
-                ),
-                (
-                        coord.x,
-                        coord.y
-                ),
-        ) > distance_error:
-
-            path_to_coord_from_player = self.engine.world_map_handler.find_path(
-                cells=world_cells,
-                start=(
-                    self.engine.game_context.local_player.current_coord.x,
-                    self.engine.game_context.local_player.current_coord.y
-                ),
-                goal=(
-                    coord.x,
-                    coord.y
-                )
-            )
-            if (fast_travel
-                    and fast_travel.lvl_require <= player_levels
-                    and not already_change_world_with_fast_travel):
-                if not path_to_coord_from_fast_travel:
-                    path_to_coord_from_fast_travel = self.engine.world_map_handler.find_path(
-                        cells=world_cells,
-                        start=(
-                            fast_travel.coord.x,
-                            fast_travel.coord.y
-                        ),
-                        goal=(
-                            coord.x,
-                            coord.y
-                        )
-                    )
-
-                if not path_to_coord_from_player or len(path_to_coord_from_player) > len(
-                        path_to_coord_from_fast_travel):
-                    await self._change_world(world_id, fast_travel.code)
-                    already_change_world_with_fast_travel = True
-
-            if self.engine.game_context.screen.world_id != world_id:
-                return await self._go_to(
-                    world_id=world_id,
-                    coord=coord,
-                    fast_travel=fast_travel,
-                    distance_error=distance_error,
-                    world_cells=world_cells,
-                    path_to_coord_from_fast_travel=path_to_coord_from_fast_travel
-                )
-
-            await self.engine.function_triggerer.move_to_coord(coord)
-            await asyncio.sleep(1)
-
-        return None
-
-    async def _change_world(self, world_id: int, fast_travel_code: str = None):
-        await self.engine.function_triggerer.change_world(
-            world_id,
-            fast_travel_code=fast_travel_code
-        )
-        await asyncio.sleep(3)
-
-        while self.engine.game_context.screen.world_id != world_id:
-            await self.engine.function_triggerer.change_world(
-                world_id,
-                fast_travel_code=fast_travel_code
-            )
-            await asyncio.sleep(3)
-
-        while self.engine.game_context.screen.is_loading or self.engine.game_context.screen.is_world_loading:
-            await asyncio.sleep(1)
 
     def _within_area(self, world: World, coord: Coord, radius: int) -> bool:
         if self.engine.game_context.screen.world_id != world.id:
@@ -1331,55 +1231,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         return None
 
-    async def _interact_npc(self, npc: NPC):
-        nearest_coord = None
-        current_distance = None
-
-        player = self.engine.game_context.local_player
-
-        for world_id, coords in npc.worlds.items():
-            if world_id != self.engine.game_context.screen.world_id:
-                continue
-
-            for coord in coords:
-                distance = calculate_distance(
-                    (coord.x, coord.y),
-                    (player.current_coord.x, player.current_coord.y)
-                )
-                if nearest_coord:
-                    if distance < current_distance:
-                        current_distance = distance
-                        nearest_coord = coord
-                else:
-                    nearest_coord = coord
-                    current_distance = distance
-
-        if not nearest_coord:
-            raise Error(code='FailedToFindNPCNearestCoord')
-
-        while calculate_distance(
-                (nearest_coord.x, nearest_coord.y),
-                (player.current_coord.x, player.current_coord.y)
-        ) > 3:
-            await self.engine.function_triggerer.move_to_coord(nearest_coord)
-            await asyncio.sleep(2)
-            player = self.engine.game_context.local_player
-
-        viewport_npc = None
-        for vpn in self.engine.game_context.viewport.object_npcs.values():
-            if vpn.object.npc_id == npc.id:
-                viewport_npc = vpn
-
-        if not viewport_npc:
-            raise Error(
-                code='FailedToFindViewportNPC'
-            )
-
-        while not self.engine.game_context.merchant.window.is_open:
-            await self.engine.function_triggerer.move_to_coord(nearest_coord)
-            await asyncio.sleep(1)
-            await self.engine.function_triggerer.interact_npc(viewport_npc)
-
     async def _go_shopping(self):
         if not self.engine.game_context.local_player.in_safe_zone:
             return
@@ -1406,7 +1257,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             if inv_settings.num_of_hp_potions > current_hp_potions:
 
                 if not self.engine.game_context.merchant.window.is_open:
-                    await self._interact_npc(potion_merchant_npc)
+                    await self.engine.action_handler.interact_npc(potion_merchant_npc)
 
                 target_hp_potion = None
                 for gi in self.engine.game_context_synchronizer.load_merchant_storage_items().values():
@@ -1431,7 +1282,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if inv_settings.buy_mp_potions and inv_settings.num_of_mp_potions > 0 and potion_merchant_npc:
             if inv_settings.num_of_mp_potions > current_mp_potions:
                 if not self.engine.game_context.merchant.window.is_open:
-                    await self._interact_npc(potion_merchant_npc)
+                    await self.engine.action_handler.interact_npc(potion_merchant_npc)
 
                 target_mp_potion = None
                 for gi in self.engine.game_context_synchronizer.load_merchant_storage_items().values():

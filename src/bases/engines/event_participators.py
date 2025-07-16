@@ -1,15 +1,28 @@
 import itertools
 import os
 import pickle
+import datetime
 from sympy import Eq, solve, Symbol, sympify, N
 from sympy.core.sympify import SympifyError
 
-from src.bases.engines.prototypes import QuizEventParticipatorPrototype
+from src.bases.engines.prototypes import QuizEventParticipatorPrototype, EventParticipatorPrototype
 from src.bases.engines.data_models import LanguageDatabase
 from src.constants import DATA_DIR
 
 
-class QuizEventParticipator(QuizEventParticipatorPrototype):
+class EventParticipator(EventParticipatorPrototype):
+    def _get_notifications(self, from_time: datetime.datetime = None) -> list[str]:
+        notifications = self.engine.game_context.notifications
+        if from_time:
+            notifications = filter(
+                lambda gn: gn.timestamp >= from_time,
+                notifications,
+            )
+        results = list(map(lambda gn: gn.title, notifications))
+        return results
+
+
+class QuizEventParticipator(EventParticipator):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
