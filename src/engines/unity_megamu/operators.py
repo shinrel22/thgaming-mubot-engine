@@ -751,7 +751,12 @@ class UnityMegaMUEngineOperator(EngineOperator):
     async def _check_training_type(self) -> str:
         if self.engine.game_context.local_player.reset_count == 0:
             await asyncio.sleep(2)
-        if self.engine.game_context.local_player.reset_count < self.engine.game_server.max_rr:
+
+        player = self.engine.game_context.local_player
+        game_server = self.engine.game_server
+
+        if (player.reset_count < game_server.max_rr
+                or player.level < game_server.max_level):
             return RESET_TRAINING_TYPE
         return MASTER_TRAINING_TYPE
 
