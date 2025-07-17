@@ -127,7 +127,13 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
         if quiz.type == event_constants.QUIZ_EVENT_SOLVE_MATH_TYPE:
             results = self._solve_math(input_data=quiz.content)
             while not self._is_quiz_solved(last_noti_check):
-                for r in results:
+                for index, r in enumerate(results):
+                    if index == 0:
+                        if self.participation.setting.quiz_first_answer_delay:
+                            for i in range(self.participation.setting.quiz_first_answer_delay):
+                                await asyncio.sleep(1)
+                                if self._is_quiz_solved(last_noti_check):
+                                    return
                     r = int(r)
                     if r in attempted_results:
                         continue
@@ -208,9 +214,17 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                     input_data=quiz.content,
                 )
                 while not self._is_quiz_solved(last_noti_check):
-                    for r in results:
+                    for index, r in enumerate(results):
                         if r in attempted_results:
                             continue
+
+                        if index == 0:
+                            if self.participation.setting.quiz_first_answer_delay:
+                                for i in range(self.participation.setting.quiz_first_answer_delay):
+                                    await asyncio.sleep(1)
+                                    if self._is_quiz_solved(last_noti_check):
+                                        return
+
                         await self.engine.function_triggerer.send_chat(
                             f'/r {r}'
                         )

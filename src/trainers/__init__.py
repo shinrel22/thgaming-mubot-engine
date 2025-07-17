@@ -10,7 +10,7 @@ from src.bases.trainers.prototypes import TrainerPrototype, Message
 from src.constants.trainer import (
     ENGINE_TERMINATION_WS_MSG_TYPE, STARTING_ENGINE_PROGRESS_WS_MSG_TYPE
 )
-from src.bases.engines.data_models import EngineAutologinSettings, GameFunction
+from src.bases.engines.data_models import EngineAutologinSettings, GameFunction, EngineOperatorEventParticipation
 from src.bases.engines.prototypes import EnginePrototype
 from src.os.windows import WindowsAPI
 from src.bases.errors import Error
@@ -351,6 +351,11 @@ class Trainer(TrainerPrototype):
         if engine.game_context:
             result['channel_id'] = engine.game_context.channel_id
 
+            event_participators: dict[str, EngineOperatorEventParticipation] = {}
+            for k, v in engine.operator.event_participators.items():
+                event_participators[k] = v[0].model_dump()
+            result['event_participators'] = event_participators
+
             if engine.game_context.screen:
                 result['screen'] = engine.game_context.screen.model_dump()
 
@@ -365,6 +370,13 @@ class Trainer(TrainerPrototype):
 
             if engine.game_context.party_manager:
                 result['party_manager'] = engine.game_context.party_manager.model_dump()
+
+            if engine.operator.training_spot:
+                result['training_spot'] = dict(
+                    world=dict(name=engine.operator.training_spot.world.name),
+                    to_levels=engine.operator.training_spot.to_levels,
+                    monster_spot=dict(coord=engine.operator.training_spot.monster_spot.coord.model_dump())
+                )
 
         return result
 

@@ -34,7 +34,7 @@ class WebsocketServer(WebsocketServerPrototype):
                         data=self.trainer.game_database.model_dump()
                     )
                 )
-            await asyncio.sleep(30)
+            await asyncio.sleep(60)
 
     async def _broadcast_engines(self):
         while not self.trainer.shutdown_event.is_set():

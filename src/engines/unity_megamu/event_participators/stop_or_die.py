@@ -92,7 +92,7 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
         result = None
         distance = None
         for i in range(abs(
-            START_AREA[0][0] - START_AREA[1][0]
+                START_AREA[0][0] - START_AREA[1][0]
         )):
             point = Coord(
                 x=START_AREA[0][0] + i,
@@ -187,7 +187,7 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                         await asyncio.sleep(0.5)
 
                 end_point = Coord(
-                    x=self.engine.game_context.local_player.current_coord.x,
+                    x=start_point.x,
                     y=FINISH_AREA[0][1]
                 )
 
@@ -212,7 +212,7 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                         await asyncio.sleep(0.5)
                     else:
                         next_step = Coord(
-                            x=end_point.x,
+                            x=start_point.x,
                             y=self.engine.game_context.local_player.current_coord.y + 1
                         )
                         await self.engine.function_triggerer.move_to_coord(next_step)

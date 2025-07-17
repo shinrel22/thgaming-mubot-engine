@@ -313,6 +313,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 await self._reset_player()
 
         if not self._training_spot or not self._training_spot_valid():
+            self._training_spot = None
             self._training_spot = await self._find_training_spot()
 
         last_player_levels = self.engine.game_context_synchronizer.get_player_levels()
@@ -329,6 +330,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                         await self._reset_player()
                         return None
                 if not self._training_spot_valid():
+                    self._training_spot = None
                     self._training_spot = await self._find_training_spot()
             last_player_levels = current_player_levels
 
@@ -653,6 +655,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 if pm.player_name == self.engine.game_context.local_player.name:
                     await self.engine.function_triggerer.kick_party_member(pm)
                     break
+        self._training_spot = None
 
     def _get_viewport_monster(self, training_spot) -> ViewportObject | None:
         results = self._get_viewport_monsters(training_spot)
