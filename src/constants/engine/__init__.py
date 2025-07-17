@@ -79,7 +79,3 @@ GAME_EVENT_LOST_TOWER_SURVIVAL: str = 'GameEventLostTowerSurvival'
 EVENT_PARTICIPATION_WAITING_STATUS: str = 'EventParticipationWaiting'
 EVENT_PARTICIPATION_STARTED_STATUS: str = 'EventParticipationStarted'
 EVENT_PARTICIPATION_ENDED_STATUS: str = 'EventParticipationEnded'
-
-NOTIFICATION_IGNORE_PATTERNS: list[str] = [
-    r'^\+\d+\s+EXPERIENCE$'  # exp notification
-]

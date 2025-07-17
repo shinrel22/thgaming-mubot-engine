@@ -254,6 +254,7 @@ class UnityMegaMUEngineMeta(EngineMeta):
 
     # offsets from game ui addr
     chat_frame_offset: int
+    noti_frame_offset: int
     player_frame_offset: int
     player_window_offset: int
     event_window_offset: int

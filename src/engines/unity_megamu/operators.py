@@ -77,9 +77,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
         )
 
         for event_code, event in upcoming_events.items():
-            if event_code in self._event_participators and event_code in [
-                GAME_EVENT_QUIZ
-            ]:
+            if event_code in self._event_participators:
                 continue
 
             event_setting = self.engine.settings.events.get(event_code)
@@ -271,7 +269,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
     async def _back_to_town(self):
         town_id = self.engine.settings.protection.back_to_town.town_id
-
+        await self.engine.function_triggerer.change_world(town_id)
+        await asyncio.sleep(5)
         while self.engine.game_context.screen.world_id != town_id:
             await self.engine.function_triggerer.change_world(town_id)
             await asyncio.sleep(5)
@@ -301,6 +300,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             # trigger in town logic here
             await self._go_shopping()
             await self._move_items_to_warehouse()
+            await asyncio.sleep(3)
 
         if self._need_to_back_to_town():
             await self._back_to_town()
@@ -376,11 +376,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
         if settings.when_no_mp_potions_left:
             if not self._get_item_from_inventory(
                     item_type=MP_POTION_ITEM_TYPE
-            ):
-                return True
-        if settings.when_no_sd_potions_left:
-            if not self._get_item_from_inventory(
-                    item_type=SD_POTION_ITEM_TYPE
             ):
                 return True
 
@@ -1272,9 +1267,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
                 if target_hp_potion:
                     while current_hp_potions < inv_settings.num_of_hp_potions:
-                        print('buying hp potions')
-                        print('current_hp_potions', current_hp_potions)
-                        print('target_hp_potion.quantity', target_hp_potion.quantity)
                         await self.engine.function_triggerer.purchase_item(target_hp_potion)
                         current_hp_potions += target_hp_potion.quantity
                         await asyncio.sleep(0.1)
@@ -1297,9 +1289,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
                 if target_mp_potion:
                     while current_mp_potions < inv_settings.num_of_mp_potions:
-                        print('buying mp potions')
-                        print('current_mp_potions', current_mp_potions)
-                        print('target_mp_potion.quantity', target_mp_potion.quantity)
                         await self.engine.function_triggerer.purchase_item(target_mp_potion)
                         current_mp_potions += target_mp_potion.quantity
                         await asyncio.sleep(0.1)

@@ -2,7 +2,6 @@ import asyncio
 import ctypes
 import json
 import struct
-import re
 from json import JSONDecodeError
 from datetime import timedelta
 
@@ -18,7 +17,7 @@ from src.bases.errors import Error
 from src.constants.engine import (
     ITEM_LOCATION_INVENTORY,
     ITEM_LOCATION_GROUND,
-    ITEM_LOCATION_MERCHANT_STORAGE, OFFENSIVE_SKILL_TYPE, BUFF_SKILL_TYPE, NOTIFICATION_IGNORE_PATTERNS
+    ITEM_LOCATION_MERCHANT_STORAGE, OFFENSIVE_SKILL_TYPE, BUFF_SKILL_TYPE
 )
 from .data_models import (
     UnityMegaMUGameContext,
@@ -727,16 +726,6 @@ class UnityMegaMUEngineGameContextSynchronizer(EngineGameContextSynchronizer):
 
             noti_title = noti_title.strip().upper()
             if not noti_title:
-                continue
-
-            is_ignored = False
-            for ignore_pattern in NOTIFICATION_IGNORE_PATTERNS:
-                regex = re.compile(ignore_pattern, re.IGNORECASE)
-                if regex.match(noti_title):
-                    is_ignored = True
-                    break
-
-            if is_ignored:
                 continue
 
             noti = GameNotification(

@@ -210,6 +210,9 @@ class EngineFunctionTriggererPrototype(BaseModel):
     async def get_game_events(self):
         raise NotImplementedError
 
+    async def push_notification(self, text: str):
+        raise NotImplementedError
+
 
 class EngineOperatorPrototype(BaseModel):
     engine: EnginePrototype

@@ -134,9 +134,9 @@ class UnityMegaMUActionHandler(ActionHandler):
         while calculate_distance(
                 (nearest_coord.x, nearest_coord.y),
                 (player.current_coord.x, player.current_coord.y)
-        ) > 2:
+        ) > 3:
             await self.engine.function_triggerer.move_to_coord(nearest_coord)
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
             player = self.engine.game_context.local_player
 
         viewport_npc = None
@@ -154,5 +154,6 @@ class UnityMegaMUActionHandler(ActionHandler):
 
         if NPC_MERCHANT_TYPE in npc.types:
             while not self.engine.game_context.merchant.window.is_open:
+                await self.engine.function_triggerer.move_to_coord(nearest_coord)
                 await self.engine.function_triggerer.interact_npc(viewport_npc)
                 await asyncio.sleep(1)

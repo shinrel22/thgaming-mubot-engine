@@ -31,7 +31,8 @@ from src.constants.engine.game_funcs import (
     FUNC_PLAYER_GET_ACTIVE_SKILLS,
     FUNC_VIEWPORT_OBJECT_IS_ITEM,
     FUNC_GET_GAME_DATA_TABLES,
-    FUNC_GET_GAME_EVENTS
+    FUNC_GET_GAME_EVENTS,
+    FUNC_PUSH_NOTIFICATION
 )
 from src.bases.errors import Error
 from src.utils import str_to_bytes, capture_error
@@ -83,6 +84,40 @@ class UnityMegaMUEngineFunctionTriggerer(EngineFunctionTriggerer):
         self._register_function(
             address=self.engine.simulated_data_memory.game_funcs[
                 FUNC_GET_GAME_EVENTS
+            ].triggers['main']
+        )
+
+    @ensure_no_conflicts
+    async def push_notification(self, text: str):
+
+        chat_frame_input_field_addr = self.engine.os_api.get_value_from_pointer(
+            h_process=self.engine.h_process,
+            pointer=self.engine.game_context.chat_frame.addr + self.engine.meta.chat_frame_input_field_offset,
+        )
+        input_field_text_addr = self.engine.os_api.get_value_from_pointer(
+            h_process=self.engine.h_process,
+            pointer=chat_frame_input_field_addr + self.engine.meta.input_field_text_offset,
+        )
+        string_class_addr = self.engine.os_api.get_value_from_pointer(
+            h_process=self.engine.h_process,
+            pointer=input_field_text_addr
+        )
+
+        self.prepare_text(
+            address=self.engine.simulated_data_memory.game_func_params.data_submit_text,
+            text=text,
+            text_class_addr=string_class_addr,
+        )
+
+        self.engine.os_api.write_memory(
+            h_process=self.engine.h_process,
+            address=self.engine.simulated_data_memory.game_func_params.ptr_game_context,
+            data=self.engine.game_context.addr.to_bytes(8, 'little')
+        )
+
+        self._register_function(
+            address=self.engine.simulated_data_memory.game_funcs[
+                FUNC_PUSH_NOTIFICATION
             ].triggers['main']
         )
 

@@ -1,7 +1,6 @@
 import asyncio
 
 from src.bases.engines import Coord
-from src.bases.engines.data_models import NPC, World, WorldFastTravel
 from src.bases.engines.event_participators import EventParticipator
 from src.bases.errors import Error
 from src.constants.engine import (
@@ -21,8 +20,8 @@ FAST_TRAVEL_CODE: str = 'Coliseum'
 NPC_ID: int = 415
 
 EVENT_AREA: list[tuple[int, int]] = [
-    (209, 244),  # top left
-    (241, 244),  # top right
+    (209, 244),  # left top
+    (241, 244),  # right top
     (209, 177),  # bottom left
     (241, 177),  # bottom right
 ]
@@ -43,26 +42,6 @@ FINISH_AREA: list[tuple[int, int]] = [
 
 
 class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._npc: NPC = self.engine.game_database.npcs[NPC_ID]
-        self._world: World = self.engine.game_database.worlds[WORLD_ID]
-        self._fast_travel: WorldFastTravel = self._world.fast_travels[FAST_TRAVEL_CODE]
-        self._running_lines: list[tuple[Coord, Coord]] = self._gen_running_lines()
-
-    @staticmethod
-    def _gen_running_lines() -> list[tuple[Coord, Coord]]:
-        result = []
-
-        sa_top_left, sa_top_right, sa_bottom_left, sa_bottom_right = START_AREA
-        fa_top_left, fa_top_right, fa_bottom_left, fa_bottom_right = FINISH_AREA
-
-        for dx in range(abs(sa_top_right[0] - sa_top_left[0])):
-            start_point = Coord(x=sa_top_left[0] + dx, y=sa_top_left[1])
-            end_point = Coord(x=fa_top_left[0] + dx, y=fa_top_left[1])
-            result.append((start_point, end_point))
-        return result
 
     async def _wait_for_started(self):
         target_notifications: set[str] = {
@@ -104,23 +83,40 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
         return ((top_left[0] <= coord.x <= top_right[0])
                 and (bottom_left[1] <= coord.y <= top_right[1]))
 
-    def _get_nearest_running_line(self) -> tuple[Coord, Coord]:
+    def _find_start_point(self) -> Coord:
+        occupied_points = set(map(
+            lambda vpp: vpp.object.current_coord,
+            self.engine.game_context.viewport.object_players.values()
+        ))
 
         result = None
         distance = None
+        for i in range(abs(
+            START_AREA[0][0] - START_AREA[1][0]
+        )):
+            point = Coord(
+                x=START_AREA[0][0] + i,
+                y=START_AREA[0][1],
+            )
+            if point in occupied_points:
+                continue
 
-        for line in self._running_lines:
-            start_point, _ = line
             d = calculate_distance(
-                (start_point.x, start_point.y),
+                (
+                    point.x,
+                    point.y,
+                ),
                 (
                     self.engine.game_context.local_player.current_coord.x,
                     self.engine.game_context.local_player.current_coord.y,
                 )
             )
-            if distance is None or d < distance:
+            if distance is None or distance > d:
                 distance = d
-                result = line
+                result = point
+
+        if not result:
+            result = self.engine.game_context.local_player.current_coord
 
         return result
 
@@ -145,7 +141,9 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                     message='Failed to enter event area'
                 )
             try:
-                await self.engine.action_handler.interact_npc(npc=self._npc)
+                await self.engine.action_handler.interact_npc(
+                    npc=self.engine.game_database.npcs[NPC_ID]
+                )
             except Error as e:
                 if e.code == 'FailedToFindViewportNPC':
                     pass
@@ -156,9 +154,8 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
 
     async def _play_event(self):
         while not self._is_event_ended():
-
-            running_line = None
             teleport_casted = False
+            start_point = None
 
             while not self._is_within_area(
                     FINISH_AREA,
@@ -168,24 +165,43 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                 if self._is_event_ended():
                     return
 
-                if not running_line:
-                    running_line = self._get_nearest_running_line()
-
-                start_point, end_point = running_line
-
                 if self._is_within_area(
                         START_AREA,
                         self.engine.game_context.local_player.current_coord
                 ):
-                    await self.engine.action_handler.go_to(
-                        world_id=WORLD_ID,
-                        coord=start_point,
-                        distance_error=0
-                    )
+                    if not start_point:
+                        start_point = self._find_start_point()
+                    while calculate_distance(
+                            (
+                                    self.engine.game_context.local_player.current_coord.x,
+                                    self.engine.game_context.local_player.current_coord.y
+                            ),
+                            (
+                                    start_point.x,
+                                    start_point.y
+                            )
+                    ) > 2:
+                        if self._is_event_ended():
+                            return
+                        await self.engine.function_triggerer.move_to_coord(start_point)
+                        await asyncio.sleep(0.5)
+
+                end_point = Coord(
+                    x=self.engine.game_context.local_player.current_coord.x,
+                    y=FINISH_AREA[0][1]
+                )
 
                 while not self._is_red_signal():
+                    if self._is_event_ended():
+                        return
+                    if self.engine.game_context.local_player.is_destroying:
+                        await asyncio.sleep(1)
+                        break
                     if calculate_distance(
-                            (end_point.x, end_point.y),
+                            (
+                                    end_point.x,
+                                    end_point.y
+                            ),
                             (
                                     self.engine.game_context.local_player.current_coord.x,
                                     self.engine.game_context.local_player.current_coord.y,
@@ -193,14 +209,14 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                     ) <= 8 and not teleport_casted:
                         await self.engine.function_triggerer.teleport(end_point)
                         teleport_casted = True
-                    await self.engine.function_triggerer.move_to_coord(end_point)
-                    await asyncio.sleep(0.1)
-
-                while self.engine.game_context.local_player.is_moving:
-                    await self.engine.function_triggerer.move_to_coord(
-                        self.engine.game_context.local_player.current_coord
-                    )
-                    await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.5)
+                    else:
+                        next_step = Coord(
+                            x=end_point.x,
+                            y=self.engine.game_context.local_player.current_coord.y + 1
+                        )
+                        await self.engine.function_triggerer.move_to_coord(next_step)
+                        await asyncio.sleep(0.1)
 
                 await asyncio.sleep(0.1)
 
