@@ -956,6 +956,8 @@ class UnityMegaMUEngineOperator(EngineOperator):
             world_id=matched_monster_spot.world_id,
         )
 
+        await self._refresh_auto_accept_pt_settings()
+
         return EngineOperatorTrainingSpot(
             monster_spot=matched_monster_spot,
             monster_spots=available_monster_spots,
@@ -1170,6 +1172,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
                 already_change_world_with_fast_travel = True
             else:
                 await self.engine.action_handler.change_world(training_spot.world.id)
+            await self._refresh_auto_accept_pt_settings()
 
         while not self._within_area(
                 world=training_spot.world,

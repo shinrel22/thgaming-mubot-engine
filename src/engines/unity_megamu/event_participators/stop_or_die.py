@@ -43,6 +43,10 @@ FINISH_AREA: list[tuple[int, int]] = [
 
 class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._world_cells = self.engine.world_map_handler.load_world_cells(WORLD_ID)
+
     async def _wait_for_started(self):
         target_notifications: set[str] = {
             STARTING_NOTI,
@@ -152,16 +156,29 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
             attempts += 1
             await asyncio.sleep(1)
 
+    @staticmethod
+    def _find_end_point(start_point: Coord) -> Coord:
+        top_left, top_right, bottom_left, bottom_right = FINISH_AREA
+
+        result_y = int(bottom_left[1] + (abs(top_left[1] - bottom_left[1]) / 2))
+
+        result = Coord(
+            x=start_point.x,
+            y=result_y
+        )
+        return result
+
     async def _play_event(self):
         while not self._is_event_ended():
-            teleport_casted = False
             start_point = None
+            running_path = None
+            end_point = None
+            current_step_index = 0
 
             while not self._is_within_area(
                     FINISH_AREA,
                     self.engine.game_context.local_player.current_coord
             ):
-
                 if self._is_event_ended():
                     return
 
@@ -186,37 +203,70 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                         await self.engine.function_triggerer.move_to_coord(start_point)
                         await asyncio.sleep(0.5)
 
-                end_point = Coord(
-                    x=start_point.x,
-                    y=FINISH_AREA[0][1]
-                )
+                if end_point is None:
+                    end_point = self._find_end_point(start_point)
 
-                while not self._is_red_signal():
+                if running_path is None:
+                    running_path = self.engine.world_map_handler.find_path(
+                        cells=self._world_cells,
+                        start=(
+                            self.engine.game_context.local_player.current_coord.x,
+                            self.engine.game_context.local_player.current_coord.y,
+                        ),
+                        goal=(end_point.x, end_point.y),
+                    )
+
+                while not self._is_red_signal() and current_step_index + 1 < len(running_path):
                     if self._is_event_ended():
                         return
+
                     if self.engine.game_context.local_player.is_destroying:
+                        start_point = None
+                        end_point = None
+                        running_path = None
+                        current_step_index = 0
+                        await asyncio.sleep(3)
+                        break
+
+                    remaining_distance = calculate_distance(
+                        (
+                            self.engine.game_context.local_player.current_coord.x,
+                            self.engine.game_context.local_player.current_coord.y
+                        ),
+                        (end_point.x, end_point.y),
+                    )
+                    if remaining_distance <= 10:
+                        await self.engine.function_triggerer.move_to_coord(end_point)
+                        await self.engine.function_triggerer.teleport(end_point)
+                        await asyncio.sleep(1)
+                        current_step_index = len(running_path)
+                        break
+                    next_step_index = current_step_index + 1
+                    next_step = running_path[next_step_index]
+
+                    # last step
+                    if next_step_index + 1 >= len(running_path):
+                        await self.engine.function_triggerer.move_to_coord(end_point)
+                        await self.engine.function_triggerer.teleport(next_step)
+                        current_step_index = len(running_path)
                         await asyncio.sleep(1)
                         break
-                    if calculate_distance(
-                            (
-                                    end_point.x,
-                                    end_point.y
-                            ),
-                            (
-                                    self.engine.game_context.local_player.current_coord.x,
-                                    self.engine.game_context.local_player.current_coord.y,
-                            )
-                    ) <= 8 and not teleport_casted:
-                        await self.engine.function_triggerer.teleport(end_point)
-                        teleport_casted = True
-                        await asyncio.sleep(0.5)
-                    else:
-                        next_step = Coord(
-                            x=start_point.x,
-                            y=self.engine.game_context.local_player.current_coord.y + 1
-                        )
+
+                    has_blocker = False
+                    for vpp in self.engine.game_context.viewport.object_players.values():
+                        if vpp.object.current_coord == next_step:
+                            has_blocker = True
+                            break
+
+                    if has_blocker:
+                        next_step_index += 1
+                        next_step = running_path[next_step_index]
                         await self.engine.function_triggerer.move_to_coord(next_step)
-                        await asyncio.sleep(0.1)
+                        await self.engine.function_triggerer.teleport(next_step)
+                    else:
+                        await self.engine.function_triggerer.move_to_coord(next_step)
+                    current_step_index = next_step_index
+                    await asyncio.sleep(0.1)
 
                 await asyncio.sleep(0.1)
 

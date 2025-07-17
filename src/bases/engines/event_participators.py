@@ -2,6 +2,8 @@ import itertools
 import os
 import pickle
 import datetime
+import random
+
 from sympy import Eq, solve, Symbol, sympify, N
 from sympy.core.sympify import SympifyError
 
@@ -137,6 +139,9 @@ class QuizEventParticipator(EventParticipator):
 
         # Generate all phrase combinations
         phrases = [' '.join(phrase) for phrase in itertools.product(*solutions_per_word)]
+
+        random.shuffle(phrases)
+
         return phrases
 
     def _solve_jumbled_words(self, language: str, input_data: str) -> list[str]:
@@ -154,4 +159,9 @@ class QuizEventParticipator(EventParticipator):
                 return []  # Early termination
             solutions_per_group.append(sorted(solutions))
 
-        return [' '.join(phrase) for phrase in itertools.product(*solutions_per_group)]
+        result = [' '.join(phrase) for phrase in itertools.product(*solutions_per_group)]
+
+        random.shuffle(result)
+
+        return result
+
