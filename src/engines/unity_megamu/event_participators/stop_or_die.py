@@ -40,7 +40,7 @@ FINISH_AREA: list[tuple[int, int]] = [
     (241, 240),  # bottom right
 ]
 
-TELEPORT_RANGE: int = 6
+TELEPORT_RANGE: int = 5
 
 
 class UnityMegaMUStopOrDieEventParticipator(EventParticipator):

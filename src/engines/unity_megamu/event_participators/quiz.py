@@ -126,7 +126,13 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
         attempted_results: set[str] = set()
 
         if quiz.type == event_constants.QUIZ_EVENT_SOLVE_MATH_TYPE:
-            results = self._solve_math(input_data=quiz.content)
+            results = await self.engine.event_loop.run_in_executor(
+                None,
+                functools.partial(
+                    self._solve_math,
+                    input_data=quiz.content
+                )
+            )
             while not self._is_quiz_solved(last_noti_check):
                 for r in results:
 
@@ -139,12 +145,13 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                         self.participation.setting.quiz_answer_max_delay,
                     )
                     await asyncio.sleep(delay)
+                    if self._is_quiz_solved(last_noti_check):
+                        return
                     await self.engine.function_triggerer.send_chat(
                         f'/r {r}'
                     )
                     attempted_results.add(r)
-                    if self._is_quiz_solved(last_noti_check):
-                        return
+
                 results = []
                 await asyncio.sleep(1)
         else:
@@ -171,8 +178,8 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                         if missing_ratio > highest_missing_ratio:
                             highest_missing_ratio = missing_ratio
 
-                    if highest_missing_ratio > 0.5:
-                        self._logger.info(f'{LOGGING_MSG_PREFIX} Missing ratio is too high: {highest_missing_ratio}')
+                    missing_ratio_threshold = self.participation.setting.quiz_missing_word_ratio_threshold
+                    if highest_missing_ratio > missing_ratio_threshold:
                         await asyncio.sleep(2)
                         new_content = _check_for_content_updates()
                         if new_content and new_content != quiz.content:
@@ -197,15 +204,13 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                             self.participation.setting.quiz_answer_max_delay,
                         )
                         await asyncio.sleep(delay)
-
-                        self._logger.info(f'{LOGGING_MSG_PREFIX} Sending answer: {r}')
+                        if self._is_quiz_solved(last_noti_check):
+                            return
 
                         await self.engine.function_triggerer.send_chat(
                             f'/r {r}'
                         )
                         attempted_results.add(r)
-                        if self._is_quiz_solved(last_noti_check):
-                            return
 
                         new_content = _check_for_content_updates()
                         if new_content and new_content != quiz.content:
@@ -214,10 +219,18 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
 
                     await asyncio.sleep(1)
             else:
-                results = self._solve_jumbled_words(
-                    language=language,
-                    input_data=quiz.content,
+                results = await self.engine.event_loop.run_in_executor(
+                    None,
+                    functools.partial(
+                        self._solve_jumbled_words,
+                        language=language,
+                        input_data=quiz.content
+                    )
                 )
+                if not results:
+                    self._logger.info(f'{LOGGING_MSG_PREFIX} Failed to find any results for quiz: {quiz.title} - {quiz.content}')
+                    return
+
                 while not self._is_quiz_solved(last_noti_check):
                     for r in results:
                         if r in attempted_results:
@@ -227,12 +240,13 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                             self.participation.setting.quiz_answer_max_delay,
                         )
                         await asyncio.sleep(delay)
+                        if self._is_quiz_solved(last_noti_check):
+                            return
                         await self.engine.function_triggerer.send_chat(
                             f'/r {r}'
                         )
                         attempted_results.add(r)
-                        if self._is_quiz_solved(last_noti_check):
-                            return
+
                     results = []
                     await asyncio.sleep(1)
 
