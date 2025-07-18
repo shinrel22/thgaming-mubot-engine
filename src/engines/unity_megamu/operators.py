@@ -54,21 +54,6 @@ from .event_participators.stop_or_die import UnityMegaMUStopOrDieEventParticipat
 class UnityMegaMUEngineOperator(EngineOperator):
 
     async def _wait_for_event_to_participate(self) -> EngineOperatorEventParticipation | None:
-        current_participation = None
-        for event_code, pw in self._event_participators.items():
-            if event_code in [
-                GAME_EVENT_QUIZ
-            ]:
-                continue
-            p, _ = pw
-            if p.status != EVENT_PARTICIPATION_WAITING_STATUS:
-                current_participation = p
-                break
-
-        # already participating in another event
-        if current_participation:
-            return None
-
         matched_event = None
         matched_setting = None
 
@@ -94,6 +79,24 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
         if not matched_event:
             return None
+
+        if matched_event.code not in [
+            GAME_EVENT_QUIZ
+        ]:
+            current_participation = None
+            for event_code, pw in self._event_participators.items():
+                if event_code in [
+                    GAME_EVENT_QUIZ
+                ]:
+                    continue
+                p, _ = pw
+                if p.status != EVENT_PARTICIPATION_WAITING_STATUS:
+                    current_participation = p
+                    break
+
+            # already participating in another event
+            if current_participation:
+                return None
 
         return EngineOperatorEventParticipation(
             setting=matched_setting,
@@ -146,6 +149,7 @@ class UnityMegaMUEngineOperator(EngineOperator):
             participation = await self._wait_for_event_to_participate()
             if not participation:
                 continue
+
             self._logger.info(f'Upcoming event to participate: {participation.event.code}')
             self._event_participators[participation.event.code] = (
                 participation,
@@ -322,6 +326,18 @@ class UnityMegaMUEngineOperator(EngineOperator):
             if self.engine.settings.party.auto_accept_while_training != auto_accept_pt_requests:
                 await self._refresh_auto_accept_pt_settings()
                 auto_accept_pt_requests = self.engine.settings.party.auto_accept_while_training
+
+            if self._able_to_party_players():
+                for vpp in self.engine.game_context.viewport.object_players.values():
+                    if not self._player_valid_to_party(
+                        viewport_player=vpp,
+                        monster_spot=self._training_spot.monster_spot
+                    ):
+                        continue
+                    await self._try_partying_player(
+                        viewport_player=vpp,
+                        monster_spot=self._training_spot.monster_spot
+                    )
 
             current_player_levels = self.engine.game_context_synchronizer.get_player_levels()
             if last_player_levels < current_player_levels:
@@ -1091,7 +1107,6 @@ class UnityMegaMUEngineOperator(EngineOperator):
 
             now = get_now()
             if not last_sent or last_sent + timedelta(seconds=wait_time) <= now:
-                await self.engine.function_triggerer.send_chat('pt pls')
                 await self.engine.function_triggerer.send_party_request(
                     viewport_player=vpp,
                 )

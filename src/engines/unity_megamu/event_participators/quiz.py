@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import functools
+import random
 
 from src.bases.engines.data_models import EngineOperatorQuiz
 from src.bases.engines.event_participators import QuizEventParticipator
@@ -127,21 +128,21 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
         if quiz.type == event_constants.QUIZ_EVENT_SOLVE_MATH_TYPE:
             results = self._solve_math(input_data=quiz.content)
             while not self._is_quiz_solved(last_noti_check):
-                for index, r in enumerate(results):
-                    if index == 0:
-                        if self.participation.setting.quiz_first_answer_delay:
-                            for i in range(self.participation.setting.quiz_first_answer_delay):
-                                await asyncio.sleep(1)
-                                if self._is_quiz_solved(last_noti_check):
-                                    return
+                for r in results:
+
                     r = int(r)
                     if r in attempted_results:
                         continue
+
+                    delay = random.uniform(
+                        self.participation.setting.quiz_answer_min_delay,
+                        self.participation.setting.quiz_answer_max_delay,
+                    )
+                    await asyncio.sleep(delay)
                     await self.engine.function_triggerer.send_chat(
                         f'/r {r}'
                     )
                     attempted_results.add(r)
-                    await asyncio.sleep(1)
                     if self._is_quiz_solved(last_noti_check):
                         return
                 results = []
@@ -191,14 +192,18 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                         if r in attempted_results:
                             continue
 
+                        delay = random.uniform(
+                            self.participation.setting.quiz_answer_min_delay,
+                            self.participation.setting.quiz_answer_max_delay,
+                        )
+                        await asyncio.sleep(delay)
+
                         self._logger.info(f'{LOGGING_MSG_PREFIX} Sending answer: {r}')
 
                         await self.engine.function_triggerer.send_chat(
                             f'/r {r}'
                         )
                         attempted_results.add(r)
-                        await asyncio.sleep(2)
-
                         if self._is_quiz_solved(last_noti_check):
                             return
 
@@ -214,22 +219,18 @@ class UnityMegaMUQuizEventParticipator(QuizEventParticipator):
                     input_data=quiz.content,
                 )
                 while not self._is_quiz_solved(last_noti_check):
-                    for index, r in enumerate(results):
+                    for r in results:
                         if r in attempted_results:
                             continue
-
-                        if index == 0:
-                            if self.participation.setting.quiz_first_answer_delay:
-                                for i in range(self.participation.setting.quiz_first_answer_delay):
-                                    await asyncio.sleep(1)
-                                    if self._is_quiz_solved(last_noti_check):
-                                        return
-
+                        delay = random.uniform(
+                            self.participation.setting.quiz_answer_min_delay,
+                            self.participation.setting.quiz_answer_max_delay,
+                        )
+                        await asyncio.sleep(delay)
                         await self.engine.function_triggerer.send_chat(
                             f'/r {r}'
                         )
                         attempted_results.add(r)
-                        await asyncio.sleep(1)
                         if self._is_quiz_solved(last_noti_check):
                             return
                     results = []

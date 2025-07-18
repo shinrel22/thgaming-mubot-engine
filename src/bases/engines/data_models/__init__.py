@@ -232,7 +232,8 @@ class EngineGameEventSettings(BaseModel):
     code: str
     auto_participate: bool = False
     priority: int = 1
-    quiz_first_answer_delay: int = 3
+    quiz_answer_max_delay: int = 5
+    quiz_answer_min_delay: int = 3
 
 
 class EnginePVESkillSettings(BaseModel):

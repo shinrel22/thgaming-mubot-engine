@@ -40,6 +40,8 @@ FINISH_AREA: list[tuple[int, int]] = [
     (241, 240),  # bottom right
 ]
 
+TELEPORT_RANGE: int = 6
+
 
 class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
 
@@ -197,10 +199,13 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                                     start_point.x,
                                     start_point.y
                             )
-                    ) > 2:
+                    ) > 1:
                         if self._is_event_ended():
                             return
-                        await self.engine.function_triggerer.move_to_coord(start_point)
+                        if self._coord_blocked(start_point):
+                            await self.engine.function_triggerer.teleport(start_point)
+                        else:
+                            await self.engine.function_triggerer.move_to_coord(start_point)
                         await asyncio.sleep(0.5)
 
                 if end_point is None:
@@ -216,11 +221,14 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                         goal=(end_point.x, end_point.y),
                     )
 
-                while not self._is_red_signal() and current_step_index + 1 < len(running_path):
+                path_length = len(running_path)
+
+                while not self._is_red_signal() and current_step_index < path_length:
                     if self._is_event_ended():
                         return
 
-                    if self.engine.game_context.local_player.is_destroying:
+                    if (self.engine.game_context.local_player.is_destroying
+                            or self.engine.game_context.local_player.current_hp <= 0):
                         start_point = None
                         end_point = None
                         running_path = None
@@ -235,42 +243,41 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                         ),
                         (end_point.x, end_point.y),
                     )
-                    if remaining_distance <= 10:
-                        await self.engine.function_triggerer.move_to_coord(end_point)
+                    if remaining_distance <= TELEPORT_RANGE:
                         await self.engine.function_triggerer.teleport(end_point)
                         await asyncio.sleep(1)
-                        current_step_index = len(running_path)
-                        break
-                    next_step_index = current_step_index + 1
-                    next_step = running_path[next_step_index]
-
-                    # last step
-                    if next_step_index + 1 >= len(running_path):
-                        await self.engine.function_triggerer.move_to_coord(end_point)
-                        await self.engine.function_triggerer.teleport(next_step)
-                        current_step_index = len(running_path)
-                        await asyncio.sleep(1)
+                        current_step_index = path_length
                         break
 
-                    has_blocker = False
-                    for vpp in self.engine.game_context.viewport.object_players.values():
-                        if vpp.object.current_coord == next_step:
-                            has_blocker = True
+                    target_step = running_path[current_step_index]
+                    if self.engine.game_context.local_player.current_coord == target_step:
+                        current_step_index += 1
+                        if current_step_index >= path_length:
                             break
+                        target_step = running_path[current_step_index]
 
-                    if has_blocker:
-                        next_step_index += 1
-                        next_step = running_path[next_step_index]
-                        await self.engine.function_triggerer.move_to_coord(next_step)
-                        await self.engine.function_triggerer.teleport(next_step)
+                    if self._coord_blocked(target_step):
+                        remaining_steps = path_length - current_step_index - 1
+                        teleport_range = min(remaining_steps, TELEPORT_RANGE)
+                        if teleport_range:
+                            current_step_index += teleport_range
+                            target_step = running_path[current_step_index]
+                            await self.engine.function_triggerer.teleport(target_step)
+                            await asyncio.sleep(1)
                     else:
-                        await self.engine.function_triggerer.move_to_coord(next_step)
-                    current_step_index = next_step_index
+                        await self.engine.function_triggerer.move_to_coord(target_step)
+
                     await asyncio.sleep(0.1)
 
                 await asyncio.sleep(0.1)
 
             await asyncio.sleep(1)
+
+    def _coord_blocked(self, coord: Coord) -> bool:
+        for vpp in self.engine.game_context.viewport.object_players.values():
+            if vpp.object.current_coord == coord:
+                return True
+        return False
 
     def _is_statue_ready(self) -> bool:
         statue_addr = self.engine.os_api.get_value_from_pointer(

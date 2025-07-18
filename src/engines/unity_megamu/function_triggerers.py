@@ -46,7 +46,7 @@ def ensure_no_conflicts(func: Callable):
                 h_process=self.engine.h_process,
                 pointer=self.engine.simulated_data_memory.game_func_params.ptr_target_func,
         ):
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.01)
 
         # trigger function
         result = await func(self, *args, **kwargs)
@@ -56,7 +56,7 @@ def ensure_no_conflicts(func: Callable):
                 h_process=self.engine.h_process,
                 pointer=self.engine.simulated_data_memory.game_func_params.ptr_target_func,
         ):
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.01)
 
         return result
 
@@ -447,7 +447,7 @@ class UnityMegaMUEngineFunctionTriggerer(EngineFunctionTriggerer):
             address=self.engine.simulated_data_memory.game_func_params.data_move_coord,
             coord=coord
         )
-
+        await self.move_to_coord(coord)
         self._register_function(
             address=self.engine.simulated_data_memory.game_funcs[
                 FUNC_PLAYER_TELEPORT
