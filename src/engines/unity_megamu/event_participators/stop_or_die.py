@@ -180,7 +180,6 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
         return result
 
     async def _play_event(self):
-
         last_death = None
 
         while not self._is_event_ended():
@@ -188,6 +187,7 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
             running_path = None
             end_point = None
             current_step_index = 0
+            death_count = 0
 
             while not self._is_within_area(
                     FINISH_AREA,
@@ -198,6 +198,7 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
 
                 if self._is_dead(last_death):
                     last_death = get_now()
+                    death_count += 1
                     await asyncio.sleep(3)
                     break
 
@@ -253,6 +254,7 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                         end_point = None
                         running_path = None
                         current_step_index = 0
+                        death_count += 1
                         await asyncio.sleep(3)
                         break
 
@@ -263,9 +265,7 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                             break
                         target_step = running_path[current_step_index]
 
-                    if teleport_casted:
-                        await self.engine.function_triggerer.move_to_coord(target_step)
-                    else:
+                    if not teleport_casted and death_count == 0:
                         teleport_casted = True
                         remaining_steps = path_length - current_step_index - 1
                         tp_range = min(remaining_steps, TELEPORT_RANGE)
@@ -274,8 +274,8 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                             target_step = running_path[current_step_index]
                             await self.engine.function_triggerer.teleport(target_step)
                             await asyncio.sleep(0.1)
-                        else:
-                            await self.engine.function_triggerer.move_to_coord(target_step)
+
+                    await self.engine.function_triggerer.move_to_coord(target_step)
 
                     await asyncio.sleep(0.01)
 
