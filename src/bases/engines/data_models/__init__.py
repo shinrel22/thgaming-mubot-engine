@@ -234,7 +234,7 @@ class EngineGameEventSettings(BaseModel):
     priority: int = 1
     quiz_answer_max_delay: int = 5
     quiz_answer_min_delay: int = 2
-    quiz_missing_word_ratio_threshold: float = 0.7
+    quiz_missing_word_ratio_threshold: float = 0.6
 
 
 class EnginePVESkillSettings(BaseModel):

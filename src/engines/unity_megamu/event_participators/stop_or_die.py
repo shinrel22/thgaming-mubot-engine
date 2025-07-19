@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 
 from src.bases.engines import Coord
 from src.bases.engines.event_participators import EventParticipator
@@ -8,10 +9,11 @@ from src.constants.engine import (
     EVENT_PARTICIPATION_ENDED_STATUS,
     ENGINE_PARTICIPATING_EVENT_MODE
 )
-from src.utils import capture_error, calculate_distance
+from src.utils import capture_error, calculate_distance, get_now
 
 STARTING_NOTI: str = 'COLISEUM - STOP OR DIE - ROUND 1'
 ENDING_NOTI: str = 'STOP OR DIE FINISHED'
+DEATH_NOTI: str = 'YOU HAVE BEEN KILLED!'
 GREEN_SIGNAL_NOTI: str = 'GREEN SIGNAL'
 RED_SIGNAL_NOTI: str = 'RED SIGNAL'
 LOGGING_MSG_PREFIX: str = '[StopOrDie]'
@@ -40,7 +42,7 @@ FINISH_AREA: list[tuple[int, int]] = [
     (241, 240),  # bottom right
 ]
 
-TELEPORT_RANGE: int = 5
+TELEPORT_RANGE: int = 6
 
 
 class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
@@ -75,6 +77,13 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
             self.participation.status = EVENT_PARTICIPATION_ENDED_STATUS
             self._logger.info(f'{LOGGING_MSG_PREFIX} Event ended')
             return True
+        return False
+
+    def _is_dead(self, from_time: datetime.datetime | None = None) -> bool:
+        for noti in self._get_notifications(from_time):
+            if DEATH_NOTI in noti:
+                self._logger.info(f'{LOGGING_MSG_PREFIX} Dead!')
+                return True
         return False
 
     def _is_within_area(self,
@@ -171,6 +180,9 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
         return result
 
     async def _play_event(self):
+
+        last_death = None
+
         while not self._is_event_ended():
             start_point = None
             running_path = None
@@ -184,10 +196,16 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                 if self._is_event_ended():
                     return
 
+                if self._is_dead(last_death):
+                    last_death = get_now()
+                    await asyncio.sleep(3)
+                    break
+
                 if self._is_within_area(
                         START_AREA,
                         self.engine.game_context.local_player.current_coord
                 ):
+                    current_step_index = 0
                     if not start_point:
                         start_point = self._find_start_point()
                     while calculate_distance(
@@ -223,30 +241,19 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
 
                 path_length = len(running_path)
 
+                teleport_casted = False
+
                 while not self._is_red_signal() and current_step_index < path_length:
                     if self._is_event_ended():
                         return
 
-                    if (self.engine.game_context.local_player.is_destroying
-                            or self.engine.game_context.local_player.current_hp <= 0):
+                    if self._is_dead(last_death):
+                        last_death = get_now()
                         start_point = None
                         end_point = None
                         running_path = None
                         current_step_index = 0
                         await asyncio.sleep(3)
-                        break
-
-                    remaining_distance = calculate_distance(
-                        (
-                            self.engine.game_context.local_player.current_coord.x,
-                            self.engine.game_context.local_player.current_coord.y
-                        ),
-                        (end_point.x, end_point.y),
-                    )
-                    if remaining_distance <= TELEPORT_RANGE:
-                        await self.engine.function_triggerer.teleport(end_point)
-                        await asyncio.sleep(1)
-                        current_step_index = path_length
                         break
 
                     target_step = running_path[current_step_index]
@@ -256,18 +263,19 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                             break
                         target_step = running_path[current_step_index]
 
-                    if self._coord_blocked(target_step):
+                    if self._coord_blocked(target_step) or not teleport_casted:
+                        teleport_casted = True
                         remaining_steps = path_length - current_step_index - 1
-                        teleport_range = min(remaining_steps, TELEPORT_RANGE)
-                        if teleport_range:
-                            current_step_index += teleport_range
+                        tp_range = min(remaining_steps, TELEPORT_RANGE)
+                        if tp_range:
+                            current_step_index += tp_range
                             target_step = running_path[current_step_index]
                             await self.engine.function_triggerer.teleport(target_step)
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(0.1)
                     else:
                         await self.engine.function_triggerer.move_to_coord(target_step)
 
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.01)
 
                 await asyncio.sleep(0.1)
 
