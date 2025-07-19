@@ -263,7 +263,9 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                             break
                         target_step = running_path[current_step_index]
 
-                    if self._coord_blocked(target_step) or not teleport_casted:
+                    if teleport_casted:
+                        await self.engine.function_triggerer.move_to_coord(target_step)
+                    else:
                         teleport_casted = True
                         remaining_steps = path_length - current_step_index - 1
                         tp_range = min(remaining_steps, TELEPORT_RANGE)
@@ -272,8 +274,8 @@ class UnityMegaMUStopOrDieEventParticipator(EventParticipator):
                             target_step = running_path[current_step_index]
                             await self.engine.function_triggerer.teleport(target_step)
                             await asyncio.sleep(0.1)
-                    else:
-                        await self.engine.function_triggerer.move_to_coord(target_step)
+                        else:
+                            await self.engine.function_triggerer.move_to_coord(target_step)
 
                     await asyncio.sleep(0.01)
 
